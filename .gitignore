@@ -1,6 +1,7 @@
 #.gitignore file
 
-*.json
+twitter_credentials.json
+*credentials*.json
 *.png
 *.jpg
 *.svg

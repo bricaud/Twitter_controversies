@@ -1,0 +1,7 @@
+#.gitignore file
+
+*.json
+*.png
+*.jpg
+*.svg
+*/*

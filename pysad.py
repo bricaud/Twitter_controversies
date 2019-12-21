@@ -182,8 +182,7 @@ def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_
 	# Process the user username and its mentioned users
 	# save in a file the edgelist for the user and each mentioned user
 
-	# initial user
-	print('Processing',username)
+	#print('Processing',username)
 	#try:
 	mention_grouped,mgl = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
 	#except:

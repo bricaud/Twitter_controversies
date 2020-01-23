@@ -10,6 +10,8 @@ import numpy as np
 import networkx as nx
 import community
 
+from tqdm import tqdm
+
 def fill_retweet_info(tweet_dic,raw_retweet):
 	# handle the particular structure of a retweet to get the full text retweeted
 	tweet_dic['retweeted_from'].append(raw_retweet['user']['screen_name'])
@@ -160,7 +162,7 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	users_dic = {'username':[], 'Nb_diff_mentions': []}
 	print('Collecting the tweets for the last {} days.'.format(max_day_old))
 	new_users_list = []
-	for user in username_list:
+	for user in tqdm(username_list):
 		mentions = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
 		if not mentions.empty:
 			users_mentioned = mentions['mention'][mentions['weight']>thres]
@@ -172,7 +174,7 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	return new_users_list,users_df
 
 def remove_particular_users(users_df):
-	userlist = ['threader_app']
+	userlist = ['threader_app','threadreaderapp']
 	user_present = [user for user in userlist if user in users_df['mention']]
 	if len(user_present)>0:
 		print('dropping',user_present)
@@ -193,12 +195,31 @@ def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_
 		return mention_grouped
 	mention_grouped = remove_particular_users(mention_grouped)
 	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.csv'
-	print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
+	#print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
 	mention_grouped.to_csv(mentionfilename)
 	#nb_mentions = len(mention_grouped)
 	#print('User {} done. Nb different mentions: {}'.format(username,nb_mentions))
 	return mention_grouped
 
+def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
+	""" Collect the tweets of the users and their mentions
+		and save them in data_path
+	"""
+	print('Threshold set to {} mentions.'.format(min_mentions))
+	print('Collecting the tweets for the last {} days.'.format(max_day_old))
+	users_dic = {'username':[], 'Nb_mentions': [], 'mentions_of_mentions': []}
+	total_username_list = username_list
+	for depth in range(exploration_depth):
+		print('')
+		print('******* Processing users at {}-hop distance *******'.format(depth))
+		new_users_list,users_df = process_user_list(python_tweets, data_path, username_list, 
+													thres=min_mentions, max_day_old=max_day_old)
+		#New users to collect:
+		username_list = list(set(new_users_list).difference(set(total_username_list))) # remove the one already collected
+		total_username_list += username_list
+	print('Total number of users collected:')
+	print(len(total_username_list),len(set(total_username_list)))
+	return total_username_list
 
 #############################################################
 # Functions for the graph of users
@@ -212,7 +233,7 @@ def graph_from_edgeslist(edge_df,degree_min):
 	# Drop
 	remove = [node for node,degree in dict(G.degree()).items() if degree < degree_min]
 	G.remove_nodes_from(remove)
-	print('Nb of nodes after removing less connected nodes:',G.number_of_nodes())
+	print('Nb of nodes after removing nodes with degree strictly smaller than {}: {}'.format(degree_min,G.number_of_nodes()))
 	isolates = list(nx.isolates(G))
 	G.remove_nodes_from(isolates)
 	print('removed {} isolated nodes.'.format(len(isolates)))
@@ -224,9 +245,15 @@ def detect_communities(G):
 	#first compute the best partition
 	partition = community.best_partition(G)
 	nx.set_node_attributes(G,partition,name='community')
+	print('Communities saved on the graph as node attributes.')
 	nb_partitions = max(partition.values())+1
 	print('Nb of partitions:',nb_partitions)
-	return G
+	# Create a dictionary of subgraphs, one per community
+	community_dic = {}
+	for idx in range(nb_partitions):
+		subgraph = G.subgraph([key for (key,value) in partition.items() if value==idx])
+		community_dic[idx] = subgraph
+	return G, community_dic
 
 #############################################################
 ## Functions for Community data
@@ -331,3 +358,52 @@ def drop_twitter_urls(url_table):
 	twitterrowindices = url_table[url_table['url'].str.contains('twitter.com')].index
 	return url_table.drop(twitterrowindices)
 
+
+#############################################################
+## Functions for managing twitter accounts to follow
+#############################################################
+
+class initial_accounts:
+	""" Handle the initial twitter accounts (load ans save them)
+	"""
+	accounts_file = 'initial_accounts.txt' # Default account file
+	accounts_dic = {}
+	
+	def __init__(self,accounts_file=None):
+		if accounts_file is not None:
+			self.accounts_file = accounts_file
+		self.load()
+
+	def accounts(self,label=None):
+		#if not self.accounts_dic:
+		#	self.load()
+		if label is None:
+			return self.accounts_dic
+		self.check_label(label)
+		return self.accounts_dic[label]
+
+	def list(self):
+		return list(self.accounts_dic.keys())
+
+	def add(self,label,list_of_accounts):
+		self.accounts_dic[label] = list_of_accounts
+
+	def remove(self,label):
+		self.check_label(label)
+		del self.accounts_dic[name]
+
+	def save(self):
+		with open(self.accounts_file, 'w') as outfile:
+			json.dump(self.accounts_dic, outfile)
+		print('Wrote',self.accounts_file)
+
+	def load(self):
+		with open(self.accounts_file) as json_file:
+			self.accounts_dic = json.load(json_file)
+
+	def check_label(self,label):
+		if label not in self.accounts_dic:
+			print('ERROR. Key "{}" is not in the list of accounts.'.format(label))
+			print('Possible choices are: {}'.format([key for key in self.accounts_dic.keys()]))
+			raise keyError
+	

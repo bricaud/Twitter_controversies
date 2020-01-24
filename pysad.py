@@ -78,18 +78,22 @@ def get_mentions_edges(tweet_df):
 	# return the hashtags of the mentions in a separate list
 	
 	#mention_df = pd.DataFrame(columns=['user','mention','weight'])
+	usertoremove_list = ['threader_app','threadreaderapp']
 	row_list = []
 	for idx,tweet in tweet_df.iterrows():
 		user = tweet['user']
 		mentions = tweet['user_mentions']
 		hashtags = tweet['hashtags']
 		tweet_date = [tweet['date']]
-		urls = tweet['urls'] 
+		urls = tweet['urls']
+		text = tweet['text'] 
 		for m in mentions:
 			if m == user: # skip self-mentions
 				continue
+			if m in usertoremove_list:
+				continue
 			row_list.append({'user':user,'mention': m, 'weight': 1, 'hashtags': hashtags,
-			 'date': tweet_date, 'urls':urls})
+			 'date': tweet_date, 'urls':urls, 'text':[text]})
 	mention_df = pd.DataFrame(row_list)
 	if mention_df.empty:
 		return pd.DataFrame(),pd.DataFrame()
@@ -97,7 +101,8 @@ def get_mentions_edges(tweet_df):
 	mention_grouped = mention_df.groupby(['user','mention']).agg(weight=('weight',sum),
 																 hashtags=('hashtags', sum),
 																 date=('date', sum),
-																 urls=('urls', sum))
+																 urls=('urls', sum),
+																 text=('text', sum))
 																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))    
 	# TODO Check if mention_g_list is necessary
 	mention_g_list = mention_df.groupby(['user','mention'])['hashtags'].apply(list)
@@ -116,69 +121,54 @@ def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	mention_grouped,mention_g_list = get_mentions_edges(tweet_df)
 	return mention_grouped, mention_g_list
 
-def create_user_edgelist(python_tweets, data_path, username, thres=3, max_day_old=None):
-	# Process the user username and its mentioned users
-	# save in a file the edgelist for the user and each mentioned user
+# def create_user_edgelist(python_tweets, data_path, username, thres=3, max_day_old=None):
+# 	# Process the user username and its mentioned users
+# 	# save in a file the edgelist for the user and each mentioned user
 
-	# initial user
-	print('Processing',username)
-	#try:
-	mention_grouped,mgl = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
-	#except:
-	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
-	#    return
-	if mention_grouped.empty:
-		print('Empty tweet list. Processing stopped for user ',username)
-		return 0,0
-	mention_grouped.to_csv(data_path + username + '_mentions.csv')
-	nb_mentions = len(mention_grouped)
-	print('First user done. Nb different mentions:',nb_mentions)
+# 	# initial user
+# 	print('Processing',username)
+# 	#try:
+# 	mention_grouped,mgl = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
+# 	#except:
+# 	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
+# 	#    return
+# 	if mention_grouped.empty:
+# 		print('Empty tweet list. Processing stopped for user ',username)
+# 		return 0,0
+# 	mention_grouped.to_csv(data_path + username + '_mentions.csv')
+# 	nb_mentions = len(mention_grouped)
+# 	print('First user done. Nb different mentions:',nb_mentions)
 
-	# Threshold for number of mentions
-	print('Using threshold:',thres)
+# 	# Threshold for number of mentions
+# 	print('Using threshold:',thres)
 
-	mentions_of_mentions = 0
-	for idx,row in mention_grouped.iterrows():
-		#print('processing mention',idx)
-		mention_name = row['mention']
-		if row['weight'] < thres:
-			continue
-		try:
-			mention_grouped,mgl = collect_user_mention(mention_name,python_tweets,data_path,max_day_old)
-		except:
-			print('exception catched on user {} !!!!!!!!!!!!'.format(username))
-			continue
-		if mention_grouped.empty:
-			print('Empty tweet list. Processing stopped for user ',username)
-			continue
-		else:
-			mentionfilename = data_path + mention_name + '_mentions' +'_t' +str(thres)+'.csv'
-			print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
-			mention_grouped.to_csv(mentionfilename)
-			mentions_of_mentions += len(mention_grouped)
-	return nb_mentions,mentions_of_mentions
+# 	mentions_of_mentions = 0
+# 	for idx,row in mention_grouped.iterrows():
+# 		#print('processing mention',idx)
+# 		mention_name = row['mention']
+# 		if row['weight'] < thres:
+# 			continue
+# 		try:
+# 			mention_grouped,mgl = collect_user_mention(mention_name,python_tweets,data_path,max_day_old)
+# 		except:
+# 			print('exception catched on user {} !!!!!!!!!!!!'.format(username))
+# 			continue
+# 		if mention_grouped.empty:
+# 			print('Empty tweet list. Processing stopped for user ',username)
+# 			continue
+# 		else:
+# 			mentionfilename = data_path + mention_name + '_mentions' +'_t' +str(thres)+'.csv'
+# 			print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
+# 			mention_grouped.to_csv(mentionfilename)
+# 			mentions_of_mentions += len(mention_grouped)
+# 	return nb_mentions,mentions_of_mentions
 
-def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_old=None):
-	users_dic = {'username':[], 'Nb_diff_mentions': []}
-	print('Collecting the tweets for the last {} days.'.format(max_day_old))
-	new_users_list = []
-	for user in tqdm(username_list):
-		mentions = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
-		if not mentions.empty:
-			users_mentioned = mentions['mention'][mentions['weight']>thres]
-			#users_mentioned = users_mentioned.unique() # not sure this is useful
-			new_users_list += users_mentioned.tolist()
-		users_dic['username'].append(user)
-		users_dic['Nb_diff_mentions'].append(len(mentions))
-	users_df = pd.DataFrame(users_dic)
-	return new_users_list,users_df
-
-def remove_particular_users(users_df):
-	userlist = ['threader_app','threadreaderapp']
-	user_present = [user for user in userlist if user in users_df['mention']]
-	if len(user_present)>0:
-		print('dropping',user_present)
-	return users_df.drop(user_present)
+# def remove_particular_users(users_df):
+# 	userlist = ['threader_app','threadreaderapp']
+# 	user_present = [user for user in userlist if user in users_df['mention']]
+# 	if len(user_present)>0:
+# 		print('dropping',user_present)
+# 	return users_df.drop(user_present)
 
 def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_old):
 	# Process the user username and its mentioned users
@@ -191,15 +181,36 @@ def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_
 	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
 	#    return
 	if mention_grouped.empty:
-		print('Empty tweet list. Processing stopped for user ',username)
+		#print('Empty tweet list. Processing stopped for user ',username)
 		return mention_grouped
-	mention_grouped = remove_particular_users(mention_grouped)
+	#mention_grouped = remove_particular_users(mention_grouped)
 	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.csv'
 	#print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
 	mention_grouped.to_csv(mentionfilename)
 	#nb_mentions = len(mention_grouped)
 	#print('User {} done. Nb different mentions: {}'.format(username,nb_mentions))
 	return mention_grouped
+
+
+def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_old=None):
+	users_dic = {'username':[], 'Nb_diff_mentions': []}
+	print('Collecting the tweets for the last {} days.'.format(max_day_old))
+	new_users_list = []
+	empty_tweets_users = []
+	for user in tqdm(username_list):
+		mentions = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
+		if not mentions.empty:
+			users_mentioned = mentions['mention'][mentions['weight']>thres]
+			#users_mentioned = users_mentioned.unique() # not sure this is useful
+			new_users_list += users_mentioned.tolist()
+		else:
+			empty_tweets_users.append(user)
+		users_dic['username'].append(user)
+		users_dic['Nb_diff_mentions'].append(len(mentions))
+	print('users with empty tweet list or mentions:',empty_tweets_users)
+	users_df = pd.DataFrame(users_dic)
+	return new_users_list,users_df
+
 
 def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
 	""" Collect the tweets of the users and their mentions
@@ -228,9 +239,9 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 
 def graph_from_edgeslist(edge_df,degree_min):
 	print('Creating the graph from the edge list')
-	G = nx.from_pandas_edgelist(edge_df,source='user',target='mention', edge_attr=['weight','hashtags','date','urls'])
+	G = nx.from_pandas_edgelist(edge_df,source='user',target='mention', edge_attr=['weight','hashtags','date','urls','text'])
 	print('Nb of nodes:',G.number_of_nodes())
-	# Drop
+	# Drop node with small degree
 	remove = [node for node,degree in dict(G.degree()).items() if degree < degree_min]
 	G.remove_nodes_from(remove)
 	print('Nb of nodes after removing nodes with degree strictly smaller than {}: {}'.format(degree_min,G.number_of_nodes()))

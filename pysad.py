@@ -184,15 +184,17 @@ def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_
 		#print('Empty tweet list. Processing stopped for user ',username)
 		return mention_grouped
 	#mention_grouped = remove_particular_users(mention_grouped)
-	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.csv'
+	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
 	#print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
-	mention_grouped.to_csv(mentionfilename)
+	mention_grouped.to_json(mentionfilename)
 	#nb_mentions = len(mention_grouped)
 	#print('User {} done. Nb different mentions: {}'.format(username,nb_mentions))
 	return mention_grouped
 
 
 def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_old=None):
+	""" collect the tweets and tweet info of the users in the list username_list
+	"""
 	users_dic = {'username':[], 'Nb_diff_mentions': []}
 	print('Collecting the tweets for the last {} days.'.format(max_day_old))
 	new_users_list = []
@@ -207,7 +209,7 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 			empty_tweets_users.append(user)
 		users_dic['username'].append(user)
 		users_dic['Nb_diff_mentions'].append(len(mentions))
-	print('users with empty tweet list or mentions:',empty_tweets_users)
+	print('users with empty tweet list or no mention:',empty_tweets_users)
 	users_df = pd.DataFrame(users_dic)
 	return new_users_list,users_df
 
@@ -267,6 +269,95 @@ def detect_communities(G):
 	return G, community_dic
 
 #############################################################
+## Functions for cluster analysis
+#############################################################
+
+def compute_cluster_indicators(subgraph):
+	gc = subgraph
+	gc_size = gc.number_of_nodes()
+	ck = nx.algorithms.core.core_number(gc)
+	max_k = max(ck.values())
+	kcurve = [len([key for (key,value) in ck.items() if value==idx]) for idx in range(max_k+1)]
+	max_k_core_size = kcurve[-1]
+	in_diversity = gc.number_of_edges()/gc_size
+	in_activity = gc.size(weight='weight')/gc_size
+	info_dic = {'nb_nodes': gc_size, 'k_max':max_k, 'max_kcore':max_k_core_size,
+				'norm_kcore':max_k_core_size/gc_size,'in_diversity': in_diversity,
+				'in_activity': in_activity, 'activism': in_diversity*in_activity,
+				'hierarchy':max_k*1/(max_k_core_size/gc_size), 'hierarchy2': max_k**2/gc_size}
+	return info_dic
+
+def indicator_table(cluster_dic):
+	comm_list = []
+	for c in cluster_dic:
+		gc = cluster_dic[c]
+		comm_dic = {'Community': c}
+		info_dic = compute_cluster_indicators(gc)
+		comm_dic = {**comm_dic,**info_dic}
+		comm_list.append(comm_dic)
+	community_table = pd.DataFrame(comm_list)
+	return community_table
+
+def cluster_textandinfo(subgraph):
+	user_text = {}
+	hashtags = []
+	date_list = []
+	urls = []
+	for node1,node2,data in subgraph.edges(data=True):
+		if node1 == node2:
+			print('Self edge',node1)
+		hashtags += json.loads(data['hashtags'])
+		date_list += json.loads(data['date'])
+		urls += json.loads(data['urls'])
+		texts = json.loads(data['text'])
+		if node1 not in user_text:
+			user_text[node1] = texts
+		else:
+			user_text[node1] += texts
+	return user_text, hashtags, date_list, urls
+
+
+def communities_date_tags_as_table(dates_list, tags_list):
+	# Create a table with time and popular hashtags for each community
+	# from collections import Counter
+	comm_list = []
+	nb_hashtags = 5
+	most_common = Counter(tags_list).most_common(nb_hashtags)
+	meandate,stddate = compute_meantime(dates_list)
+	info_dic = {'Average date':meandate.date(), 'Deviation (days)':stddate.days}
+	for htag_nb in range(nb_hashtags): # filling the table with the hashtags
+		if htag_nb < len(most_common):
+			info_dic['hashtag'+str(htag_nb)] = most_common[htag_nb][0]
+		else:
+			info_dic['hashtag'+str(htag_nb)] = ''
+	return info_dic
+
+def dates_tags_table(cluster_dic):
+	comm_list = []
+	for c in cluster_dic:
+		gc = cluster_dic[c]
+		comm_dic = {'Community': c}
+		user_text, hashtags, date_list, urls = cluster_textandinfo(gc)
+		info_dic = communities_date_tags_as_table(date_list, hashtags)
+		comm_dic = {**comm_dic, **info_dic, 'urls': urls, 'text': user_text}
+		comm_list.append(comm_dic)
+	community_table = pd.DataFrame(comm_list)
+	return community_table		
+
+### Handling urls
+
+def get_urls(url_df):
+	# Dataframe with the urls of each cluster
+	urltocomm = []
+	for index_c, row in url_df.iterrows():
+		for url in row['urls']:
+			urltocomm.append([url,index_c,1])
+	url_table = pd.DataFrame(urltocomm, columns=['url','Community','Occurence'])
+	url_table = url_table.groupby(['url','Community']).agg(Occurence=('Occurence',sum))
+	url_table = url_table.reset_index()
+	return url_table
+
+#############################################################
 ## Functions for Community data
 #############################################################
 
@@ -277,32 +368,41 @@ def community_data(G):
 	tags_dic = {}
 	dates_dic = {}
 	url_dic = {}
+	text_dic = {}
 	for node1,node2,data in G.edges(data=True):
 		if node1 == node2:
 			print('Self edge',node1)
 		n1_com = G.nodes[node1]['community']
 		n2_com = G.nodes[node2]['community']
 		# Convert string to list
-		x = ast.literal_eval(data['hashtags'])
-		d = ast.literal_eval(data['date'])
-		u = ast.literal_eval(data['urls'])
-		keywords = [n.strip() for n in x]
-		date_list = [n.strip() for n in d]
-		urls = [n.strip() for n in u]
+		#x = ast.literal_eval(data['hashtags'])
+		#d = ast.literal_eval(data['date'])
+		#u = ast.literal_eval(data['urls'])
+		#keywords = [n.strip() for n in x]
+		#date_list = [n.strip() for n in d]
+		#urls = [n.strip() for n in u]
+		keywords = json.loads(data['hashtags'])
+		date_list = json.loads(data['date'])
+		urls = json.loads(data['urls'])
+		texts = json.loads(data['text'])
+
 		# fill the dics of dics
 		if n1_com not in tags_dic:
 			tags_dic[n1_com] = {}
 			dates_dic[n1_com] = {}
 			url_dic[n1_com] = {}
+			text_dic[n1_com] = {}
 		if n2_com not in tags_dic[n1_com]:
 			tags_dic[n1_com][n2_com] = keywords
 			dates_dic[n1_com][n2_com] = date_list
 			url_dic[n1_com][n2_com] = urls
+			text_dic[n1_com][n2_com] = texts
 		else:
 			tags_dic[n1_com][n2_com] += keywords 
 			dates_dic[n1_com][n2_com] += date_list
 			url_dic[n1_com][n2_com] += urls
-	return tags_dic, dates_dic, url_dic
+			text_dic[n1_com][n2_com] += texts
+	return tags_dic, dates_dic, url_dic,text_dic
 
 def compute_meantime(date_list):
 	# return mean time and standard deviation of a list of dates in days

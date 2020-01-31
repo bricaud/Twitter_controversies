@@ -4,11 +4,15 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta, date
 from twython import TwythonError
-import ast
+import preprocessor as tweetpre
 from collections import Counter
 import numpy as np
 import networkx as nx
 import community
+
+from nltk import word_tokenize
+from nltk.corpus import stopwords
+from string import punctuation
 
 from tqdm import tqdm
 
@@ -213,6 +217,12 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	users_df = pd.DataFrame(users_dic)
 	return new_users_list,users_df
 
+def process_hop(depth, python_tweets, data_path, username_list, min_mentions, max_day_old):
+	print('')
+	print('******* Processing users at {}-hop distance *******'.format(depth))
+	new_users_list,users_df = process_user_list(python_tweets, data_path, username_list, 
+													thres=min_mentions, max_day_old=max_day_old)
+	return new_users_list
 
 def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
 	""" Collect the tweets of the users and their mentions
@@ -221,15 +231,25 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 	print('Threshold set to {} mentions.'.format(min_mentions))
 	print('Collecting the tweets for the last {} days.'.format(max_day_old))
 	users_dic = {'username':[], 'Nb_mentions': [], 'mentions_of_mentions': []}
-	total_username_list = username_list
+	total_username_list = []
+	total_username_list += username_list
+	new_username_list = username_list.copy()
 	for depth in range(exploration_depth):
-		print('')
-		print('******* Processing users at {}-hop distance *******'.format(depth))
-		new_users_list,users_df = process_user_list(python_tweets, data_path, username_list, 
-													thres=min_mentions, max_day_old=max_day_old)
+		new_users_founds = process_hop(depth, python_tweets, data_path, new_username_list, 
+			min_mentions, max_day_old)
 		#New users to collect:
-		username_list = list(set(new_users_list).difference(set(total_username_list))) # remove the one already collected
-		total_username_list += username_list
+		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
+		total_username_list += new_username_list
+	
+	if len(total_username_list) < 100:
+		print('Total number of users collected:')
+		print(len(total_username_list),len(set(total_username_list)))	
+		print('Low number of users, processing one more hop.')
+		new_users_founds = process_hop(depth+1, python_tweets, data_path, new_username_list, 
+			min_mentions, max_day_old)
+		#New users to collect:
+		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
+		total_username_list += new_username_list
 	print('Total number of users collected:')
 	print(len(total_username_list),len(set(total_username_list)))
 	return total_username_list
@@ -238,10 +258,23 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 # Functions for the graph of users
 #############################################################
 
+def converttojson(edge_df):
+	""" Check if column type is list or dict and convert it to json
+		list or dict can not be saved using gexf or graphml format.
+	"""
+	edge_df_str = edge_df.copy()
+	for col in edge_df.columns:
+		if isinstance(edge_df[col][0],list) or isinstance(edge_df[col][0],dict):
+			edge_df_str[col] = edge_df[col].apply(json.dumps)
+			print('Field "{}" of class {} converted to json string'.format(col,type(edge_df[col][0])))
+		#else:
+		#	print(col,type(edge_df[col][0]))
+	return edge_df_str
 
 def graph_from_edgeslist(edge_df,degree_min):
 	print('Creating the graph from the edge list')
-	G = nx.from_pandas_edgelist(edge_df,source='user',target='mention', edge_attr=['weight','hashtags','date','urls','text'])
+	edge_df_str = converttojson(edge_df)
+	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', edge_attr=['weight','hashtags','date','urls','text'])
 	print('Nb of nodes:',G.number_of_nodes())
 	# Drop node with small degree
 	remove = [node for node,degree in dict(G.degree()).items() if degree < degree_min]
@@ -271,6 +304,15 @@ def detect_communities(G):
 #############################################################
 ## Functions for cluster analysis
 #############################################################
+
+def cluster_attributes(cluster_graph):
+	cg = cluster_graph
+	nx.set_node_attributes(cg,dict(nx.degree(cg)),'degree')
+	nx.set_node_attributes(cg,dict(nx.degree(cg,weight='weight')),'degree_w')
+	nx.set_node_attributes(cg,nx.betweenness_centrality(cg),'bcentrality')
+	nx.set_node_attributes(cg,nx.pagerank(cg),'pagerank')
+	nx.set_edge_attributes(cg,nx.edge_betweenness_centrality(cg),'bcentrality')
+	return cg
 
 def compute_cluster_indicators(subgraph):
 	gc = subgraph
@@ -317,20 +359,37 @@ def cluster_textandinfo(subgraph):
 	return user_text, hashtags, date_list, urls
 
 
-def communities_date_tags_as_table(dates_list, tags_list):
-	# Create a table with time and popular hashtags for each community
+def community_tags_dic(tags_list,nb_tags=None):
+	# Create a dict with popular hashtags for each community
 	# from collections import Counter
-	comm_list = []
-	nb_hashtags = 5
-	most_common = Counter(tags_list).most_common(nb_hashtags)
+	htag_dic = {}
+	most_common = Counter(tags_list).most_common(nb_tags)
+	if nb_tags is None: # take all the hashtags
+		nb_tags = len(most_common)
+	for htag_idx in range(nb_tags): # filling the table with the hashtags
+		if htag_idx < len(most_common): 
+			htag_dic['hashtag'+str(htag_idx)] = most_common[htag_idx][0]
+		else: # less hashtags than required
+			htag_dic['hashtag'+str(htag_idx)] = ''
+	return htag_dic
+
+def hashtag_count_table(tags_list):
+	# Create a table with hashtags and their count
+	# from collections import Counter
+	htag_list = []
+	most_common = Counter(tags_list).most_common()
+	for htag_idx in range(len(most_common)): # creting a list of dic with the hashtags
+		htag_dic = {'hashtag': most_common[htag_idx][0], 'count': most_common[htag_idx][1]}
+		htag_list.append(htag_dic)
+	htag_table = pd.DataFrame(htag_list)
+	return htag_table
+
+def community_date_stats(dates_list):
+	# Create a dict with mean time and deviation
 	meandate,stddate = compute_meantime(dates_list)
-	info_dic = {'Average date':meandate.date(), 'Deviation (days)':stddate.days}
-	for htag_nb in range(nb_hashtags): # filling the table with the hashtags
-		if htag_nb < len(most_common):
-			info_dic['hashtag'+str(htag_nb)] = most_common[htag_nb][0]
-		else:
-			info_dic['hashtag'+str(htag_nb)] = ''
-	return info_dic
+	date_dic = {'Average date':meandate.date(), 'Deviation (days)':stddate.days}
+	return date_dic
+
 
 def dates_tags_table(cluster_dic):
 	comm_list = []
@@ -338,8 +397,9 @@ def dates_tags_table(cluster_dic):
 		gc = cluster_dic[c]
 		comm_dic = {'Community': c}
 		user_text, hashtags, date_list, urls = cluster_textandinfo(gc)
-		info_dic = communities_date_tags_as_table(date_list, hashtags)
-		comm_dic = {**comm_dic, **info_dic, 'urls': urls, 'text': user_text}
+		hash_dic = community_tags_dic(hashtags,nb_tags=5)
+		date_dic = community_date_stats(date_list)
+		comm_dic = {**comm_dic, **date_dic, **hash_dic, 'urls': urls, 'text': user_text}
 		comm_list.append(comm_dic)
 	community_table = pd.DataFrame(comm_list)
 	return community_table		
@@ -356,6 +416,99 @@ def get_urls(url_df):
 	url_table = url_table.groupby(['url','Community']).agg(Occurence=('Occurence',sum))
 	url_table = url_table.reset_index()
 	return url_table
+
+def count_order_items(item_list,item_name):
+	dic_list = []
+	most_commons = Counter(item_list).most_common()
+	for item_idx in range(len(most_commons)): # creating a list of dic with the hashtags
+		item_dic = {item_name: most_commons[item_idx][0], 'count': most_commons[item_idx][1]}
+		dic_list.append(item_dic)
+	item_table = pd.DataFrame(dic_list)
+	return item_table
+
+def tokenize(text):
+	#from nltk import word_tokenize
+	#from nltk.corpus import stopwords
+	stop_words = stopwords.words('french') + list(punctuation)
+	words = word_tokenize(text)
+	words = [w.lower() for w in words]
+	return [w for w in words if w not in stop_words and not w.isdigit()]
+
+def most_common_words(text_table):
+	""" Requires nltk
+	"""
+	fulltext = ''
+	for text in text_table['filtered text']:
+		fulltext += ' ' + text
+	
+	tktext = tokenize(fulltext)
+	word_table = count_order_items(tktext,'word')
+	# Calculate frequency distribution
+	#fdist = nltk.FreqDist(tktext)
+	#return fdist.most_common()
+	return word_table
+
+def extract_info_from_cluster_table(cluster_edge_table):
+	text_list = []
+	htag_list = []
+	url_list = []
+	for index,row in cluster_edge_table.iterrows():
+		for text in json.loads(row['text']):
+			filtered_text = tweetpre.clean(text)
+			text_list.append({'text': text, 'filtered text': filtered_text, 'bcentrality': row['bcentrality']})
+		for htag in json.loads(row['hashtags']):
+			htag_list.append(htag)
+		for url in json.loads(row['urls']):
+			url_list.append(url)
+	text_df = pd.DataFrame(text_list)
+	mostcommon_words_df = most_common_words(text_df)
+	hashtags_df = count_order_items(htag_list,'hashtag')
+	url_df = count_order_items(url_list,'url')
+	url_df = convert_bitly(url_df)
+	filtered_url_df = drop_twitter_urls(url_df)
+	return {'text': text_df, 'hashtags': hashtags_df, 'words': mostcommon_words_df, 'urls': filtered_url_df}
+
+
+def cluster_tables(cluster_graph):
+	edge_data_list = []
+	cluster_users_df = pd.DataFrame.from_dict(dict(cluster_graph.nodes(data=True)),orient='index').sort_values('pagerank',ascending=False)
+	cluster_users_df = cluster_users_df.drop('community',axis=1)
+	cluster_users_df = cluster_users_df.reset_index().rename(columns={'index':'username'})
+	for node1,node2,data in cluster_graph.edges(data=True):
+		edge_data_list.append(data)
+	cluster_edge_info = pd.DataFrame(edge_data_list)
+	cluster_edge_info = cluster_edge_info.sort_values('bcentrality',ascending=False)
+	table_dic = extract_info_from_cluster_table(cluster_edge_info)
+	return {'users': cluster_users_df, **table_dic}
+
+
+
+def save_excel(table_dic,filename):
+	#import pandas.io.formats.excel
+	#pandas.io.formats.excel.header_style = None
+
+	with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+		# Set the column width
+		column_width = 25
+		workbook  = writer.book
+		# Add a header format.
+		format1 = workbook.add_format({
+			#'bold': True,
+			'text_wrap': True,
+			#'valign': 'top',
+			#'fg_color': '#D7E4BC',
+			'border': 1}) 
+		
+		for tablename in table_dic:
+			table_dic[tablename].to_excel(writer, sheet_name=tablename,index=False)
+			worksheet = writer.sheets[tablename]
+			worksheet.set_column('B:E',column_width,format1)
+			worksheet.set_column('A:A',100,format1)
+	print('Data saved to',filename)		
+	 
+def save_graph(graph,graphfilename):
+	nx.write_gexf(graph,graphfilename)
+	print('Graph saved to',graphfilename)
 
 #############################################################
 ## Functions for Community data
@@ -466,6 +619,8 @@ def convert_bitly(url_table):
 
 def drop_twitter_urls(url_table):
 	# Drop the references to twitter web site
+	if url_table.empty:
+		return url_table
 	twitterrowindices = url_table[url_table['url'].str.contains('twitter.com')].index
 	return url_table.drop(twitterrowindices)
 

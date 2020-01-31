@@ -14,6 +14,8 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 from string import punctuation
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 from tqdm import tqdm
 
 def fill_retweet_info(tweet_dic,raw_retweet):
@@ -500,7 +502,7 @@ def save_excel(table_dic,filename):
 			'border': 1}) 
 		
 		for tablename in table_dic:
-			table_dic[tablename].to_excel(writer, sheet_name=tablename,index=False)
+			table_dic[tablename].to_excel(writer, sheet_name=tablename, index=False)
 			worksheet = writer.sheets[tablename]
 			worksheet.set_column('B:E',column_width,format1)
 			worksheet.set_column('A:A',100,format1)
@@ -509,6 +511,40 @@ def save_excel(table_dic,filename):
 def save_graph(graph,graphfilename):
 	nx.write_gexf(graph,graphfilename)
 	print('Graph saved to',graphfilename)
+
+
+#############################################################
+## Global graph processing from clusters info
+#############################################################
+
+def get_corpus(clusters_dic):
+	""" Return a corpus with one document per cluter.
+		Each document contains all the cluster tweets concatenated.
+	"""
+	corpus = []
+	for c_id in clusters_dic:
+		table_dic = clusters_dic[c_id]['info_table']
+		tweet_texts = table_dic['text']['filtered text']
+		document = ''
+		for text in tweet_texts: # concatenate tweets
+			document += text + ' '
+		corpus.append(document)
+	return corpus
+
+def tfidf(corpus,max_keywords=20):
+	# from sklearn.feature_extraction.text import TfidfVectorizer
+	corpus_len = len(corpus)
+	vectorizer = TfidfVectorizer(max_df=corpus_len//2)
+	X = vectorizer.fit_transform(corpus)
+	keywords_dic = {}
+	for idx in range(corpus_len):
+		# place tf-idf values in a pandas data frame
+		df = pd.DataFrame(X[idx].T.todense(), index=vectorizer.get_feature_names(), columns=["tfidf"])
+		df = df.sort_values(by=["tfidf"],ascending=False).head(max_keywords)
+		keywords_dic[idx] = df.reset_index().rename(columns={'index':'keyword'})
+	return keywords_dic
+
+
 
 #############################################################
 ## Functions for Community data

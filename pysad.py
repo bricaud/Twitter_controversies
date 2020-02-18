@@ -90,30 +90,21 @@ def get_mentions_edges(tweet_df):
 		user = tweet['user']
 		mentions = tweet['user_mentions']
 		hashtags = tweet['hashtags']
-		tweet_date = [tweet['date']]
+		tweet_date = tweet['date']
 		urls = tweet['urls']
-		text = tweet['text'] 
+		text = tweet['text']
+		retweet_count = tweet['retweet_count']
+		favorite_count = tweet['favorite_count'] 
 		for m in mentions:
 			if m == user: # skip self-mentions
 				continue
 			if m in usertoremove_list:
 				continue
 			row_list.append({'user':user,'mention': m, 'weight': 1, 'hashtags': hashtags,
-			 'date': tweet_date, 'urls':urls, 'text':[text]})
+							'date': tweet_date, 'urls':urls, 'text':text,
+							'retweet_count': retweet_count,'favorite_count': favorite_count})
 	mention_df = pd.DataFrame(row_list)
-	if mention_df.empty:
-		return pd.DataFrame(),pd.DataFrame()
-	# this agg only works with pandas version >= 0.25
-	mention_grouped = mention_df.groupby(['user','mention']).agg(weight=('weight',sum),
-																 hashtags=('hashtags', sum),
-																 date=('date', sum),
-																 urls=('urls', sum),
-																 text=('text', sum))
-																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))    
-	# TODO Check if mention_g_list is necessary
-	mention_g_list = mention_df.groupby(['user','mention'])['hashtags'].apply(list)
-	mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
-	return mention_grouped,mention_g_list
+	return mention_df
 
 def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	# Return the mentions of a users from its tweets, together with the hashtags of the tweet where the mention is
@@ -121,11 +112,11 @@ def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	tweets_dic = get_user_tweets(python_tweets,username,count=100, max_day_old=max_day_old)
 	if not tweets_dic:
 		print('User {} has an empty tweet list.'.format(username))
-		return pd.DataFrame(),pd.DataFrame()
+		return pd.DataFrame()
 	#print(tweets_dic)
 	tweet_df = pd.DataFrame(tweets_dic)
-	mention_grouped,mention_g_list = get_mentions_edges(tweet_df)
-	return mention_grouped, mention_g_list
+	mention_df = get_mentions_edges(tweet_df)
+	return mention_df
 
 # def create_user_edgelist(python_tweets, data_path, username, thres=3, max_day_old=None):
 # 	# Process the user username and its mentioned users
@@ -182,19 +173,31 @@ def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_
 
 	#print('Processing',username)
 	#try:
-	mention_grouped,mgl = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
+	mention_df = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
+	
 	#except:
 	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
 	#    return
-	if mention_grouped.empty:
+	if mention_df.empty:
 		#print('Empty tweet list. Processing stopped for user ',username)
-		return mention_grouped
+		return mention_df
 	#mention_grouped = remove_particular_users(mention_grouped)
 	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
 	#print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
-	mention_grouped.to_json(mentionfilename)
+	mention_df.to_json(mentionfilename)
 	#nb_mentions = len(mention_grouped)
 	#print('User {} done. Nb different mentions: {}'.format(username,nb_mentions))
+	return mention_df
+
+def group_edges(edge_df):
+	# this agg only works with pandas version >= 0.25
+	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum),
+																 hashtags=('hashtags', sum),
+																 date=('date', sum),
+																 urls=('urls', sum),
+																 text=('text', sum))
+																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))
+	mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
 	return mention_grouped
 
 
@@ -206,23 +209,25 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	new_users_list = []
 	empty_tweets_users = []
 	for user in tqdm(username_list):
-		mentions = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
-		if not mentions.empty:
+		mentions_df = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
+		# Collect mentioned users to the next hop	
+		if not mentions_df.empty:
+			mentions = group_edges(mentions_df)	
 			users_mentioned = mentions['mention'][mentions['weight']>thres]
 			#users_mentioned = users_mentioned.unique() # not sure this is useful
 			new_users_list += users_mentioned.tolist()
 		else:
 			empty_tweets_users.append(user)
-		users_dic['username'].append(user)
-		users_dic['Nb_diff_mentions'].append(len(mentions))
+	#	users_dic['username'].append(user)
+	#	users_dic['Nb_diff_mentions'].append(len(mentions))
 	print('users with empty tweet list or no mention:',empty_tweets_users)
-	users_df = pd.DataFrame(users_dic)
-	return new_users_list,users_df
+	#users_df = pd.DataFrame(users_dic)
+	return new_users_list #,users_df
 
 def process_hop(depth, python_tweets, data_path, username_list, min_mentions, max_day_old):
 	print('')
 	print('******* Processing users at {}-hop distance *******'.format(depth))
-	new_users_list,users_df = process_user_list(python_tweets, data_path, username_list, 
+	new_users_list = process_user_list(python_tweets, data_path, username_list, 
 													thres=min_mentions, max_day_old=max_day_old)
 	return new_users_list
 
@@ -265,18 +270,34 @@ def converttojson(edge_df):
 		list or dict can not be saved using gexf or graphml format.
 	"""
 	edge_df_str = edge_df.copy()
-	for col in edge_df.columns:
-		if isinstance(edge_df[col][0],list) or isinstance(edge_df[col][0],dict):
+	for idx,col in enumerate(edge_df.columns):
+		first_row_element = edge_df.iloc[0,idx]
+		if isinstance(first_row_element,list) or isinstance(first_row_element,dict):
 			edge_df_str[col] = edge_df[col].apply(json.dumps)
-			print('Field "{}" of class {} converted to json string'.format(col,type(edge_df[col][0])))
+			print('Field "{}" of class {} converted to json string'.format(col,type(first_row_element)))
 		#else:
 		#	print(col,type(edge_df[col][0]))
 	return edge_df_str
 
+#def aggregate_edges(edge_df):
+	#TODO
+
+def reshape_to_graph_edge_list(edge_grouped):
+	edge_list = []
+	for name,group in edge_grouped:
+		json_df = group.to_json()
+		edge_dic = {'user': name[0], 'mention': name[1], 'weight':group['weight'].sum(),
+					'tweets': json_df}
+		edge_list.append(edge_dic)
+	return pd.DataFrame(edge_list)
+
 def graph_from_edgeslist(edge_df,degree_min):
 	print('Creating the graph from the edge list')
-	edge_df_str = converttojson(edge_df)
-	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', edge_attr=['weight','hashtags','date','urls','text'])
+	edge_grouped = edge_df.groupby(['user','mention'])
+	#edge_df_str = converttojson(edge_df)
+	edge_df_str = reshape_to_graph_edge_list(edge_grouped)
+	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', 
+		edge_attr=['weight','tweets'], create_using=nx.DiGraph)
 	print('Nb of nodes:',G.number_of_nodes())
 	# Drop node with small degree
 	remove = [node for node,degree in dict(G.degree()).items() if degree < degree_min]
@@ -291,7 +312,11 @@ def graph_from_edgeslist(edge_df,degree_min):
 
 def detect_communities(G):
 	#first compute the best partition
-	partition = community.best_partition(G)
+	if isinstance(G,nx.DiGraph):
+		Gu = G.to_undirected()
+	else:
+		Gu = G
+	partition = community.best_partition(Gu)
 	nx.set_node_attributes(G,partition,name='community')
 	print('Communities saved on the graph as node attributes.')
 	nb_partitions = max(partition.values())+1
@@ -310,9 +335,14 @@ def detect_communities(G):
 def cluster_attributes(cluster_graph):
 	cg = cluster_graph
 	nx.set_node_attributes(cg,dict(nx.degree(cg)),'degree')
+	if cg.is_directed():
+		nx.set_node_attributes(cg,dict(cg.in_degree()),'in degree')
+		nx.set_node_attributes(cg,dict(cg.out_degree()),'out degree')
 	nx.set_node_attributes(cg,dict(nx.degree(cg,weight='weight')),'degree_w')
 	nx.set_node_attributes(cg,nx.betweenness_centrality(cg),'bcentrality')
 	nx.set_node_attributes(cg,nx.pagerank(cg),'pagerank')
+	if cg.is_directed():
+		nx.set_node_attributes(cg,nx.pagerank(cg.reverse()),'pagerank inv')
 	nx.set_edge_attributes(cg,nx.edge_betweenness_centrality(cg),'bcentrality')
 	return cg
 
@@ -354,6 +384,7 @@ def cluster_textandinfo(subgraph):
 		date_list += json.loads(data['date'])
 		urls += json.loads(data['urls'])
 		texts = json.loads(data['text'])
+		# associate text to writer
 		if node1 not in user_text:
 			user_text[node1] = texts
 		else:
@@ -440,7 +471,7 @@ def most_common_words(text_table):
 	""" Requires nltk
 	"""
 	fulltext = ''
-	for text in text_table['filtered text']:
+	for text in text_table:
 		fulltext += ' ' + text
 	
 	tktext = tokenize(fulltext)
@@ -455,18 +486,35 @@ def extract_info_from_cluster_table(cluster_edge_table):
 	htag_list = []
 	url_list = []
 	for index,row in cluster_edge_table.iterrows():
-		for text in json.loads(row['text']):
+		username = row['user']
+		tweet_df = pd.read_json(row['tweets'])
+		
+		for idx,tweet in tweet_df.iterrows():
+			htags = tweet['hashtags']
+			urls = tweet['urls']
+			text = tweet['text']
+			retweet_count = tweet['retweet_count']
+			favorite_count = tweet['favorite_count']
+
+			tweetpre.set_options(tweetpre.OPT.MENTION, tweetpre.OPT.URL)
 			filtered_text = tweetpre.clean(text)
-			text_list.append({'text': text, 'filtered text': filtered_text, 'bcentrality': row['bcentrality']})
-		for htag in json.loads(row['hashtags']):
-			htag_list.append(htag)
-		for url in json.loads(row['urls']):
-			url_list.append(url)
+			# extract emojis
+			parsed_tweet = tweetpre.parse(text)
+			emojis = []
+			if parsed_tweet.emojis is not None:
+				emojis = [emo.match for emo in parsed_tweet.emojis]
+			#emojis = parsed_tweet.emojis.match ???
+			url_c = [convert_bitly_url(url_string) for url_string in urls]
+			text_list.append({'text': text, 'user': username, 'url': url_c , 'emojis':emojis , 
+				'retweet_count':retweet_count, 'favorite_count': favorite_count, 'filtered text': filtered_text, 
+				'bcentrality': row['bcentrality']})
+			htag_list += htags
+			url_list += urls
 	text_df = pd.DataFrame(text_list)
-	mostcommon_words_df = most_common_words(text_df)
+	mostcommon_words_df = most_common_words(text_df['filtered text'])
 	hashtags_df = count_order_items(htag_list,'hashtag')
 	url_df = count_order_items(url_list,'url')
-	url_df = convert_bitly(url_df)
+	url_df = convert_bitly_table(url_df)
 	filtered_url_df = drop_twitter_urls(url_df)
 	return {'text': text_df, 'hashtags': hashtags_df, 'words': mostcommon_words_df, 'urls': filtered_url_df}
 
@@ -477,6 +525,8 @@ def cluster_tables(cluster_graph):
 	cluster_users_df = cluster_users_df.drop('community',axis=1)
 	cluster_users_df = cluster_users_df.reset_index().rename(columns={'index':'username'})
 	for node1,node2,data in cluster_graph.edges(data=True):
+		# Add writer
+		data['user'] = node1
 		edge_data_list.append(data)
 	cluster_edge_info = pd.DataFrame(edge_data_list)
 	cluster_edge_info = cluster_edge_info.sort_values('bcentrality',ascending=False)
@@ -485,29 +535,59 @@ def cluster_tables(cluster_graph):
 
 
 
-def save_excel(table_dic,filename):
+def save_excel(table_dic,filename, table_format='full'):
 	#import pandas.io.formats.excel
 	#pandas.io.formats.excel.header_style = None
 
 	with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
-		# Set the column width
-		column_width = 25
-		workbook  = writer.book
-		# Add a header format.
-		format1 = workbook.add_format({
+
+		if table_format is 'full':
+			for tablename in table_dic:
+				col_size_dic = {'B:E':25, 'A:A':100}
+				write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
+		else:
+			#table_dic = excel_reshape(table_dic)
+			tablename = 'cluster'
+			col_size_dic = {'A:B':10,'C:E':20, 'F:F':30, 'G:G':30 ,'I:I': 30}
+			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
+			tablename = 'tweets'
+			col_size_dic = {'A:A':100, 'B:B':20, 'C:D':50, 'E:E':25}
+			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
+
+		#for tablename in table_dic:
+		#	write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
+			#table_dic[tablename].to_excel(writer, sheet_name=tablename, index=False)
+			#worksheet = writer.sheets[tablename]
+			#worksheet.set_column('B:E',column_width,format1)
+			#worksheet.set_column('A:A',100,format1)
+	print('Data saved to',filename)		
+	 
+
+def write_excel_sheet(df,sheet_name,writer,column_size_dic):
+	df.to_excel(writer, sheet_name=sheet_name, index=False)
+	workbook  = writer.book
+	# Add a header format.
+	format1 = workbook.add_format({
 			#'bold': True,
 			'text_wrap': True,
 			#'valign': 'top',
 			#'fg_color': '#D7E4BC',
 			'border': 1}) 
-		
-		for tablename in table_dic:
-			table_dic[tablename].to_excel(writer, sheet_name=tablename, index=False)
-			worksheet = writer.sheets[tablename]
-			worksheet.set_column('B:E',column_width,format1)
-			worksheet.set_column('A:A',100,format1)
-	print('Data saved to',filename)		
-	 
+	# column sizes
+	worksheet = writer.sheets[sheet_name]
+	for column in column_size_dic:
+		column_width = column_size_dic[column]
+		worksheet.set_column(column,column_width,format1)
+
+def excel_reshape(table_dic):
+	# Sort table_dic
+	hashtags_keywords = pd.concat([table_dic['cluster'],
+		table_dic['hashtags'],table_dic['keywords']],axis=1)
+	tweets = table_dic['text']
+	table_dic_s = {'cluster': table_dic['cluster'],'hashtags': hashtags_keywords,
+					'text': tweets}
+	return table_dic_s
+
 def save_graph(graph,graphfilename):
 	nx.write_gexf(graph,graphfilename)
 	print('Graph saved to',graphfilename)
@@ -636,8 +716,8 @@ def communities_urls(url_dic):
 	url_table = url_table.reset_index()
 	return url_table
 
-def convert_bitly(url_table):
-	# Replace all bit.ly urls by the correct one
+def convert_bitly_table(url_table):
+	# create a dataframe of correspondances for bit.ly urls 
 	import requests
 
 	session = requests.Session()  # so connections are recycled
@@ -647,17 +727,39 @@ def convert_bitly(url_table):
 		if 'bit.ly' in url:
 			try:
 				resp = session.head(url, allow_redirects=True)
-				url_table.loc[index,'url'] = resp.url
+				url_table.loc[index,'url_c'] = resp.url
 			except requests.exceptions.RequestException as e:  # This is the correct syntax
 				print(' exception raised for url',url)
 				print(e)
+				url_table.loc[index,'url_c'] = url
+		else:
+			url_table.loc[index,'url_c'] = url
 	return url_table
+
+
+def convert_bitly_url(url_string):
+	# create a dataframe of correspondances for bit.ly urls 
+	import requests
+
+	session = requests.Session()  # so connections are recycled
+
+	if 'bit.ly' in url_string:
+		try:
+			resp = session.head(url_string, allow_redirects=True)
+			return resp.url
+		except requests.exceptions.RequestException as e:  # This is the correct syntax
+			print(' exception raised for url',url)
+			print(e)
+			return url_string
+	return url_string
+
+
 
 def drop_twitter_urls(url_table):
 	# Drop the references to twitter web site
 	if url_table.empty:
 		return url_table
-	twitterrowindices = url_table[url_table['url'].str.contains('twitter.com')].index
+	twitterrowindices = url_table[url_table['url_c'].str.contains('twitter.com')].index
 	return url_table.drop(twitterrowindices)
 
 

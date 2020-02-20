@@ -10,11 +10,11 @@ The file `initial_accounts.txt` contains the list of initial users from where th
 
 ## TODO
 
-[] Reorganize the module `pysad` in submodules
+[ ] Reorganize the module `pysad` in submodules
 
-[] Find better indicators of the cluster struture
+[ ] Find better indicators of the cluster struture
 
-[] Write a notebook that compares the indicators of the different clusters, displaying hashtags and keywords as well.
+[ ] Write a notebook that compares the indicators of the different clusters, displaying hashtags and keywords as well.
 
-[] Find a better way to visualize the data (better than Excel files). An interactive graph?
+[ ] Find a better way to visualize the data (better than Excel files). An interactive graph?
 

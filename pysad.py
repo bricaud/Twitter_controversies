@@ -1,6 +1,7 @@
 # Module for #sad project
 
 import pandas as pd
+import os
 import json
 from datetime import datetime, timedelta, date
 from twython import TwythonError
@@ -17,6 +18,11 @@ from string import punctuation
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from tqdm import tqdm
+
+
+###############################################################
+# Functions for extracting tweet info from the twitter API
+###############################################################
 
 def fill_retweet_info(tweet_dic,raw_retweet):
 	# handle the particular structure of a retweet to get the full text retweeted
@@ -78,13 +84,16 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 		tweets_dic['text'].append(full_text)
 	return tweets_dic
 
+##################################################################################
+# Functions for turning tweet data into an edge list with properties
+##################################################################################
+
 def get_mentions_edges(tweet_df):
-	# return the mentions summed over all the tweets in tweet_df
-	# it gives a table with user,mention, number of mention
-	# return the hashtags of the mentions in a separate list
+	# Create the user -> mention table with their properties fom the list of tweets of a user
 	
-	#mention_df = pd.DataFrame(columns=['user','mention','weight'])
+	# Some bots to be removed from the collection
 	usertoremove_list = ['threader_app','threadreaderapp']
+
 	row_list = []
 	for idx,tweet in tweet_df.iterrows():
 		user = tweet['user']
@@ -108,7 +117,6 @@ def get_mentions_edges(tweet_df):
 
 def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	# Return the mentions of a users from its tweets, together with the hashtags of the tweet where the mention is
-	#print('Collect the Tweets of the last {} days.'.format(max_day_old))
 	tweets_dic = get_user_tweets(python_tweets,username,count=100, max_day_old=max_day_old)
 	if not tweets_dic:
 		print('User {} has an empty tweet list.'.format(username))
@@ -118,85 +126,29 @@ def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	mention_df = get_mentions_edges(tweet_df)
 	return mention_df
 
-# def create_user_edgelist(python_tweets, data_path, username, thres=3, max_day_old=None):
-# 	# Process the user username and its mentioned users
-# 	# save in a file the edgelist for the user and each mentioned user
-
-# 	# initial user
-# 	print('Processing',username)
-# 	#try:
-# 	mention_grouped,mgl = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
-# 	#except:
-# 	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
-# 	#    return
-# 	if mention_grouped.empty:
-# 		print('Empty tweet list. Processing stopped for user ',username)
-# 		return 0,0
-# 	mention_grouped.to_csv(data_path + username + '_mentions.csv')
-# 	nb_mentions = len(mention_grouped)
-# 	print('First user done. Nb different mentions:',nb_mentions)
-
-# 	# Threshold for number of mentions
-# 	print('Using threshold:',thres)
-
-# 	mentions_of_mentions = 0
-# 	for idx,row in mention_grouped.iterrows():
-# 		#print('processing mention',idx)
-# 		mention_name = row['mention']
-# 		if row['weight'] < thres:
-# 			continue
-# 		try:
-# 			mention_grouped,mgl = collect_user_mention(mention_name,python_tweets,data_path,max_day_old)
-# 		except:
-# 			print('exception catched on user {} !!!!!!!!!!!!'.format(username))
-# 			continue
-# 		if mention_grouped.empty:
-# 			print('Empty tweet list. Processing stopped for user ',username)
-# 			continue
-# 		else:
-# 			mentionfilename = data_path + mention_name + '_mentions' +'_t' +str(thres)+'.csv'
-# 			print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
-# 			mention_grouped.to_csv(mentionfilename)
-# 			mentions_of_mentions += len(mention_grouped)
-# 	return nb_mentions,mentions_of_mentions
-
-# def remove_particular_users(users_df):
-# 	userlist = ['threader_app','threadreaderapp']
-# 	user_present = [user for user in userlist if user in users_df['mention']]
-# 	if len(user_present)>0:
-# 		print('dropping',user_present)
-# 	return users_df.drop(user_present)
-
 def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_old):
 	# Process the user username and its mentioned users
 	# save in a file the edgelist for the user and each mentioned user
-
-	#print('Processing',username)
-	#try:
 	mention_df = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
-	
-	#except:
-	#    print('exception catched on user {} !!!!!!!!!!!!'.format(username))
-	#    return
 	if mention_df.empty:
-		#print('Empty tweet list. Processing stopped for user ',username)
 		return mention_df
-	#mention_grouped = remove_particular_users(mention_grouped)
 	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
-	#print('Writing {} tweets in {}.'.format(len(mention_grouped),mentionfilename))
 	mention_df.to_json(mentionfilename)
-	#nb_mentions = len(mention_grouped)
-	#print('User {} done. Nb different mentions: {}'.format(username,nb_mentions))
 	return mention_df
 
+# def group_edges(edge_df):
+# 	# this agg only works with pandas version >= 0.25
+# 	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum),
+# 																 hashtags=('hashtags', sum),
+# 																 date=('date', sum),
+# 																 urls=('urls', sum),
+# 																 text=('text', sum))
+# 																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))
+# 	mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
+# 	return mention_grouped
+
 def group_edges(edge_df):
-	# this agg only works with pandas version >= 0.25
-	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum),
-																 hashtags=('hashtags', sum),
-																 date=('date', sum),
-																 urls=('urls', sum),
-																 text=('text', sum))
-																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))
+	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum))
 	mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
 	return mention_grouped
 
@@ -210,19 +162,16 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	empty_tweets_users = []
 	for user in tqdm(username_list):
 		mentions_df = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
-		# Collect mentioned users to the next hop	
+		# Collect mentioned users for the next hop
+		# Only collect the ones mentioned more than the threshold thres 
 		if not mentions_df.empty:
 			mentions = group_edges(mentions_df)	
 			users_mentioned = mentions['mention'][mentions['weight']>thres]
-			#users_mentioned = users_mentioned.unique() # not sure this is useful
 			new_users_list += users_mentioned.tolist()
 		else:
 			empty_tweets_users.append(user)
-	#	users_dic['username'].append(user)
-	#	users_dic['Nb_diff_mentions'].append(len(mentions))
 	print('users with empty tweet list or no mention:',empty_tweets_users)
-	#users_df = pd.DataFrame(users_dic)
-	return new_users_list #,users_df
+	return new_users_list 
 
 def process_hop(depth, python_tweets, data_path, username_list, min_mentions, max_day_old):
 	print('')
@@ -233,7 +182,8 @@ def process_hop(depth, python_tweets, data_path, username_list, min_mentions, ma
 
 def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
 	""" Collect the tweets of the users and their mentions
-		and save them in data_path
+		make an edge list user -> mention
+		and save each user edge list to a file
 	"""
 	print('Threshold set to {} mentions.'.format(min_mentions))
 	print('Collecting the tweets for the last {} days.'.format(max_day_old))
@@ -316,7 +266,7 @@ def detect_communities(G):
 		Gu = G.to_undirected()
 	else:
 		Gu = G
-	partition = community.best_partition(Gu)
+	partition = community.best_partition(Gu, weight='weight')
 	nx.set_node_attributes(G,partition,name='community')
 	print('Communities saved on the graph as node attributes.')
 	nb_partitions = max(partition.values())+1
@@ -326,13 +276,42 @@ def detect_communities(G):
 	for idx in range(nb_partitions):
 		subgraph = G.subgraph([key for (key,value) in partition.items() if value==idx])
 		community_dic[idx] = subgraph
-	return G, community_dic
+	#clusters_modularity = community.modularity(partition, Gu)
+	return G, community_dic #,clusters_modularity
 
 #############################################################
 ## Functions for cluster analysis
 #############################################################
 
+def cluster_connectivity(G, weight='weight'):
+	""" Compute the ratio nb of edges inside the community over nb edges pointing outside,
+		for each community
+	"""
+	# 1) indexing the edges by community
+	sum_edges_dic = { com : {} for com in range(G.nb_communities)}
+	for node1,node2 in G.edges():
+		comm1 = G.nodes[node1]['community']
+		comm2 = G.nodes[node2]['community']
+		if comm2 not in sum_edges_dic[comm1]:
+			sum_edges_dic[comm1][comm2] = 0
+			sum_edges_dic[comm2][comm1] = 0
+		else:
+			if weight == None:
+				sum_edges_dic[comm1][comm2] += 1
+				sum_edges_dic[comm2][comm1] += 1
+			else:	
+				sum_edges_dic[comm1][comm2] += G.edges[node1,node2][weight]
+				sum_edges_dic[comm2][comm1] += G.edges[node1,node2][weight]
+	c_connectivity = {}
+	# 2) computing the connectivity
+	for com in sum_edges_dic:
+		in_out_edges = sum(sum_edges_dic[com].values())
+		c_connectivity[com] = round(- np.log2(sum_edges_dic[com][com] / in_out_edges),3)   
+	return c_connectivity
+
 def cluster_attributes(cluster_graph):
+	""" Compute and store structure properties in the cluster (to nodes and edges)
+	"""
 	cg = cluster_graph
 	nx.set_node_attributes(cg,dict(nx.degree(cg)),'degree')
 	if cg.is_directed():
@@ -353,11 +332,14 @@ def compute_cluster_indicators(subgraph):
 	max_k = max(ck.values())
 	kcurve = [len([key for (key,value) in ck.items() if value==idx]) for idx in range(max_k+1)]
 	max_k_core_size = kcurve[-1]
-	in_diversity = gc.number_of_edges()/gc_size
-	in_activity = gc.size(weight='weight')/gc_size
+	density = gc.number_of_edges()/(gc_size*(gc_size-1))
+	mean_edge_weight = gc.size(weight='weight')/gc.number_of_edges()
+	sink_list = [node for node, out_degree in gc.out_degree() if out_degree == 0]
+	source_list = [node for node, in_degree in gc.in_degree() if in_degree == 0]
 	info_dic = {'nb_nodes': gc_size, 'k_max':max_k, 'max_kcore':max_k_core_size,
-				'norm_kcore':max_k_core_size/gc_size,'in_diversity': in_diversity,
-				'in_activity': in_activity, 'activism': in_diversity*in_activity,
+				'norm_kcore':max_k_core_size/gc_size,'density': density,
+				'activity_per_edge': mean_edge_weight, 'nb_influencers': len(sink_list),
+				'nb anthousiasts': len(source_list),
 				'hierarchy':max_k*1/(max_k_core_size/gc_size), 'hierarchy2': max_k**2/gc_size}
 	return info_dic
 
@@ -437,18 +419,7 @@ def dates_tags_table(cluster_dic):
 	community_table = pd.DataFrame(comm_list)
 	return community_table		
 
-### Handling urls
 
-def get_urls(url_df):
-	# Dataframe with the urls of each cluster
-	urltocomm = []
-	for index_c, row in url_df.iterrows():
-		for url in row['urls']:
-			urltocomm.append([url,index_c,1])
-	url_table = pd.DataFrame(urltocomm, columns=['url','Community','Occurence'])
-	url_table = url_table.groupby(['url','Community']).agg(Occurence=('Occurence',sum))
-	url_table = url_table.reset_index()
-	return url_table
 
 def count_order_items(item_list,item_name):
 	dic_list = []
@@ -496,13 +467,14 @@ def extract_info_from_cluster_table(cluster_edge_table):
 			retweet_count = tweet['retweet_count']
 			favorite_count = tweet['favorite_count']
 
-			tweetpre.set_options(tweetpre.OPT.MENTION, tweetpre.OPT.URL)
-			filtered_text = tweetpre.clean(text)
-			# extract emojis
 			parsed_tweet = tweetpre.parse(text)
+			# extract emojis
 			emojis = []
 			if parsed_tweet.emojis is not None:
 				emojis = [emo.match for emo in parsed_tweet.emojis]
+			tweetpre.set_options(tweetpre.OPT.MENTION, tweetpre.OPT.URL)
+			filtered_text = tweetpre.clean(text)
+			tweetpre.set_options()
 			#emojis = parsed_tweet.emojis.match ???
 			url_c = [convert_bitly_url(url_string) for url_string in urls]
 			text_list.append({'text': text, 'user': username, 'url': url_c , 'emojis':emojis , 
@@ -548,12 +520,16 @@ def save_excel(table_dic,filename, table_format='full'):
 		else:
 			#table_dic = excel_reshape(table_dic)
 			tablename = 'cluster'
-			col_size_dic = {'A:B':10,'C:E':20, 'F:F':30, 'G:G':30 ,'I:I': 30}
+			col_size_dic = {'A:B':10, 'C:C': 15,'D:E':20, 'F:F':20, 'G:G': 20, 'H:H':25 ,'J:J': 25}
 			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
 			tablename = 'tweets'
 			col_size_dic = {'A:A':100, 'B:B':20, 'C:D':50, 'E:E':25}
+			if 'filtered text' in table_dic[tablename].columns:
+				table_dic[tablename].drop(labels='filtered text',axis=1, inplace=True)
 			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
-
+			tablename = 'indicators'
+			col_size_dic = {'A:B':10, 'C:C': 15,'D:I':20}
+			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
 		#for tablename in table_dic:
 		#	write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
 			#table_dic[tablename].to_excel(writer, sheet_name=tablename, index=False)
@@ -627,7 +603,7 @@ def tfidf(corpus,max_keywords=20):
 
 
 #############################################################
-## Functions for Community data
+## Functions for Community data (comparing clusters)
 #############################################################
 
 def community_data(G):
@@ -705,6 +681,17 @@ def communities_date_hashtags(dates_dic, tags_dic):
 
 ### Handling urls
 
+def get_urls(url_df):
+	# Dataframe with the urls of each cluster
+	urltocomm = []
+	for index_c, row in url_df.iterrows():
+		for url in row['urls']:
+			urltocomm.append([url,index_c,1])
+	url_table = pd.DataFrame(urltocomm, columns=['url','Community','Occurence'])
+	url_table = url_table.groupby(['url','Community']).agg(Occurence=('Occurence',sum))
+	url_table = url_table.reset_index()
+	return url_table
+
 def communities_urls(url_dic):
 	# Dataframe with the urls of each cluster
 	urltocomm = []
@@ -735,24 +722,6 @@ def convert_bitly_table(url_table):
 		else:
 			url_table.loc[index,'url_c'] = url
 	return url_table
-
-
-def convert_bitly_url(url_string):
-	# create a dataframe of correspondances for bit.ly urls 
-	import requests
-
-	session = requests.Session()  # so connections are recycled
-
-	if 'bit.ly' in url_string:
-		try:
-			resp = session.head(url_string, allow_redirects=True)
-			return resp.url
-		except requests.exceptions.RequestException as e:  # This is the correct syntax
-			print(' exception raised for url',url)
-			print(e)
-			return url_string
-	return url_string
-
 
 
 def drop_twitter_urls(url_table):
@@ -811,3 +780,44 @@ class initial_accounts:
 			print('Possible choices are: {}'.format([key for key in self.accounts_dic.keys()]))
 			raise keyError
 	
+####################################################################
+# Utils
+####################################################################
+
+def initialize_folder(path_folder_list):
+	# create or clean the path
+	# import os
+	folder_concat = ''
+	for folder in path_folder_list[:-1]:
+		folder_concat += folder + '/'
+		if not os.path.isdir(folder_concat):
+			os.mkdir(folder_concat)
+			print('Path created:',folder_concat)
+	# Special treatment for the last folder
+	folder_concat += path_folder_list[-1] + '/'
+	if not os.path.isdir(folder_concat):
+		os.mkdir(folder_concat)
+		print('Path created:',folder_concat)
+	else:
+		for f in os.listdir(folder_concat):
+			os.remove(os.path.join(folder_concat, f))
+		print('Cleaned path',folder_concat)
+	return folder_concat
+
+
+def convert_bitly_url(url_string):
+	# return the true URL from the bit.ly one
+	import requests
+
+	session = requests.Session()  # so connections are recycled
+
+	if 'bit.ly' in url_string:
+		try:
+			resp = session.head(url_string, allow_redirects=True)
+			return resp.url
+		except requests.exceptions.RequestException as e:  # This is the correct syntax
+			print(' exception raised for url',url)
+			print(e)
+			return url_string
+	return url_string
+

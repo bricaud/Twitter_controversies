@@ -5,4 +5,6 @@ twitter_credentials.json
 *.png
 *.jpg
 *.svg
-*/*
+*.pdf
+*.odt
+*pycache*

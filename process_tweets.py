@@ -13,8 +13,8 @@ category_name = 'coronavirus'
 #category_name = 'french_tech_lesechos'
 today = date.today()
 date_string = today.strftime("%Y%m%d")
-tweet_data_path_list = ['tweetdata', category_name, date_string]
-results_data_path_list = ['resultsdata2', category_name, date_string]
+tweet_data_path_list = ['..','tweetdata', category_name, date_string]
+results_data_path_list = ['..','resultsdata2', category_name, date_string]
 # Graph
 DEGREE_MIN = 2 # Minimal number of connections in the graph
 ##

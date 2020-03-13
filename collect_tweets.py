@@ -12,8 +12,8 @@ import pysad.utils as pu
 ######Choose a category##############    
 #category_name = 'swiss_climate_controversial'
 #category_name = 'swiss_climate_regular'
-#category_name = 'coronavirus'
-category_name = 'french_tech_lesechos'
+category_name = 'coronavirus'
+#category_name = 'french_tech_lesechos'
 #category_name = 'swiss_immigration'
 #category_name = 'swiss_immigration2'
 #category_name = 'debat_burqa'
@@ -21,8 +21,8 @@ category_name = 'french_tech_lesechos'
 # path
 today = date.today()
 date_string = today.strftime("%Y%m%d")
-tweet_data_path_list = ['tweetdata', category_name, date_string]
-results_data_path_list = ['resultsdata2', category_name, date_string]
+tweet_data_path_list = ['..','tweetdata', category_name, date_string]
+results_data_path_list = ['..','resultsdata2', category_name, date_string]
 
 # tweets
 min_mentions = 2 # minimal number of mentions of a user to be followed

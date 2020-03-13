@@ -126,13 +126,14 @@ def collect_user_mention(username,python_tweets,data_path, max_day_old):
 	mention_df = get_mentions_edges(tweet_df)
 	return mention_df
 
-def create_user_edgelist_new(python_tweets, data_path, username, thres, max_day_old):
+def create_user_edgelist_new(python_tweets, data_path, username, max_day_old):
 	# Process the user username and its mentioned users
 	# save in a file the edgelist for the user and each mentioned user
 	mention_df = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
 	if mention_df.empty:
 		return mention_df
-	mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
+	#mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
+	mentionfilename = data_path + username + '_mentions' + '.json'
 	mention_df.to_json(mentionfilename)
 	return mention_df
 
@@ -161,12 +162,12 @@ def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_
 	new_users_list = []
 	empty_tweets_users = []
 	for user in tqdm(username_list):
-		mentions_df = create_user_edgelist_new(python_tweets, data_path, user, thres=thres, max_day_old=max_day_old)
+		mentions_df = create_user_edgelist_new(python_tweets, data_path, user, max_day_old=max_day_old)
 		# Collect mentioned users for the next hop
 		# Only collect the ones mentioned more than the threshold thres 
 		if not mentions_df.empty:
 			mentions = group_edges(mentions_df)	
-			users_mentioned = mentions['mention'][mentions['weight']>thres]
+			users_mentioned = mentions['mention'][mentions['weight']>=thres]
 			new_users_list += users_mentioned.tolist()
 		else:
 			empty_tweets_users.append(user)
@@ -207,8 +208,7 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
 		total_username_list += new_username_list
-	print('Total number of users collected:')
-	print(len(total_username_list),len(set(total_username_list)))
+	
 	return total_username_list
 
 #############################################################
@@ -784,7 +784,7 @@ class initial_accounts:
 # Utils
 ####################################################################
 
-def initialize_folder(path_folder_list):
+def initialize_folder(path_folder_list, erase=True):
 	# create or clean the path
 	# import os
 	folder_concat = ''
@@ -798,7 +798,7 @@ def initialize_folder(path_folder_list):
 	if not os.path.isdir(folder_concat):
 		os.mkdir(folder_concat)
 		print('Path created:',folder_concat)
-	else:
+	elif erase==True:
 		for f in os.listdir(folder_concat):
 			os.remove(os.path.join(folder_concat, f))
 		print('Cleaned path',folder_concat)

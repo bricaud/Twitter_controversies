@@ -8,9 +8,13 @@ Don't forget to add your credential in the `json` file. an empty model is given 
 
 The file `initial_accounts.txt` contains the list of initial users from where the exploration starts, for different topics.
 
+The notebook `add_initial_accounts.ipynb` give example on how to add new list of users to explore for the `initial_accounts.txt`.
+
+Python scripts can automatically collect tweets `collect_tweets.py`, and process them `process_tweets.py`.
+
 ## TODO
 
-[ ] Reorganize the module `pysad` in submodules
+[x] Reorganize the module `pysad` in submodules
 
 [ ] Find better indicators of the cluster struture
 

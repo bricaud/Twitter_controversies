@@ -72,6 +72,16 @@ def detect_communities(G):
 	#clusters_modularity = community.modularity(partition, Gu)
 	return G, community_dic #,clusters_modularity
 
+def remove_small_communities(G,community_dic,min_size):
+	for key in community_dic:
+		graph = community_dic[key]
+		nb_removed = 0
+		if graph.number_of_nodes() <= min_size:
+			G.remove_nodes_from(graph.nodes())
+			nb_removed +=1
+	print('removed {} community(ies) smaller than {} nodes.'.format(nb_removed, min_size))
+	return G
+
 #############################################################
 ## Functions for cluster analysis
 #############################################################

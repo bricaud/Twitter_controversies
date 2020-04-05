@@ -1,6 +1,7 @@
 
 
 import pandas as pd
+import numpy as np
 import networkx as nx
 import preprocessor as tweetpre
 from . import utils as pu
@@ -39,7 +40,13 @@ def cluster_connectivity(G, weight='weight'):
 	# 2) computing the connectivity
 	for com in sum_edges_dic:
 		in_out_edges = sum(sum_edges_dic[com].values())
-		c_connectivity[com] = round(- np.log2(sum_edges_dic[com][com] / in_out_edges),3)   
+		if in_out_edges == 0 or sum_edges_dic[com][com] == 0:
+			if sum_edges_dic[com][com] == 0:
+				c_connectivity = 0
+			else:
+				c_connectivity = 1000
+		else:
+			c_connectivity[com] = round(- np.log2(sum_edges_dic[com][com] / in_out_edges),3)   
 	return c_connectivity
 
 def cluster_attributes(cluster_graph):

@@ -7,4 +7,7 @@ twitter_credentials.json
 *.svg
 *.pdf
 *.odt
+*.csv
+*.gephi
+*checkpoints*
 *pycache*

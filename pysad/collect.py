@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 def fill_retweet_info(tweet_dic,raw_retweet):
 	# handle the particular structure of a retweet to get the full text retweeted
-	tweet_dic['retweeted_from'].append(raw_retweet['user']['screen_name'])
+	tweet_dic['retweeted_from'] = raw_retweet['user']['screen_name']
 	if raw_retweet['truncated']:
 		full_text = raw_retweet['extended_tweet']['full_text']
 	else:
@@ -28,6 +28,44 @@ def get_full_url(url_dic):
 	if 'unwound' in url_dic:
 		return url_dic['unwound']['url']
 	return url_dic['expanded_url']
+
+def extract_tweet_infos(raw_tweet):
+	# make a dic from the json raw tweet with the needed information 
+
+	tweet_dic = {}
+	time_struct = datetime.strptime(raw_tweet['created_at'],'%a %b %d %H:%M:%S +0000 %Y')
+	ts = time_struct.strftime('%Y-%m-%d %H:%M:%S')
+	
+	tweet_dic['user'] = raw_tweet['user']['screen_name']
+	tweet_dic['date'] = ts
+	tweet_dic['favorite_count'] = raw_tweet['favorite_count']
+	tweet_dic['retweet_count'] = raw_tweet['retweet_count']  
+	tweet_dic['user_mentions'] = [user['screen_name'] for user in raw_tweet['entities']['user_mentions']]
+	tweet_dic['urls'] = [get_full_url(url) for url in raw_tweet['entities']['urls']]
+	tweet_dic['hashtags'] = [htg['text'] for htg in raw_tweet['entities']['hashtags']]
+	#if raw_tweet['entities']['hashtags']:
+	#    print([htg['text'] for htg in raw_tweet['entities']['hashtags']])
+	#print(raw_tweet)
+	if 'place' in raw_tweet and raw_tweet['place'] != None:          
+		tweet_dic['place'] = raw_tweet['place']['name']
+	else:
+		tweet_dic['place'] = None
+	
+	# Handle text and retweet data
+	if raw_tweet['truncated']:
+		if 'extended_tweet' not in raw_tweet:
+			raise ValueError('Missing extended tweet information. Make sure you set options to get extended tweet from the API.')
+		full_text = raw_tweet['extended_tweet']['full_text']
+	elif 'full_text' in raw_tweet:
+		full_text = raw_tweet['full_text']
+	else:
+		full_text = raw_tweet['text']    
+	if 'retweeted_status' in raw_tweet:
+		tweet_dic, full_text = fill_retweet_info(tweet_dic,raw_tweet['retweeted_status'])
+	else:
+		tweet_dic['retweeted_from'] = None
+	tweet_dic['text'] = full_text
+	return tweet_dic
 
 def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 	# Collect tweets from a username
@@ -43,36 +81,23 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 		return tweets_dic
 	for raw_tweet in tweet_handle.get_user_timeline(screen_name = username,  
 										   count = count, include_rts = True, tweet_mode='extended'):
-		# Meta data
+		# Check if the tweet date is not too old
 		time_struct = datetime.strptime(raw_tweet['created_at'],'%a %b %d %H:%M:%S +0000 %Y')
-		ts = time_struct.strftime('%Y-%m-%d %H:%M:%S')
 		if (max_day_old is not None) and (time_struct < datetime.now() - timedelta(days = max_day_old)):
 			break # stop iterating on the tweet list
-		tweets_dic['user'].append(raw_tweet['user']['screen_name'])
-		tweets_dic['date'].append(ts)
-		tweets_dic['favorite_count'].append(raw_tweet['favorite_count'])
-		tweets_dic['retweet_count'].append(raw_tweet['retweet_count'])    
-		tweets_dic['user_mentions'].append([user['screen_name'] for user in raw_tweet['entities']['user_mentions']])
-		tweets_dic['urls'].append([get_full_url(url) for url in raw_tweet['entities']['urls']])
-		tweets_dic['hashtags'].append([htg['text'] for htg in raw_tweet['entities']['hashtags']])
-		#if raw_tweet['entities']['hashtags']:
-		#    print([htg['text'] for htg in raw_tweet['entities']['hashtags']])
-		#print(raw_tweet)
-		if 'place' in raw_tweet and raw_tweet['place'] != None:          
-			tweets_dic['place'].append(raw_tweet['place']['name'])
-		else:
-			tweets_dic['place'].append(None)
-		
-		# Handle text and retweet data
-		if raw_tweet['truncated']:
-			full_text = raw_tweet['extended_tweet']['full_text']
-		else:
-			full_text = raw_tweet['full_text']    
-		if 'retweeted_status' in raw_tweet:
-			tweets_dic, full_text = fill_retweet_info(tweets_dic,raw_tweet['retweeted_status'])
-		else:
-			tweets_dic['retweeted_from'].append(None)
-		tweets_dic['text'].append(full_text)
+		# Structure the needed info in a dict
+		tweet_dic = extract_tweet_infos(raw_tweet)
+		tweets_dic['user'].append(tweet_dic['user'])
+		tweets_dic['date'].append(tweet_dic['date'])
+		tweets_dic['favorite_count'].append(tweet_dic['favorite_count'])
+		tweets_dic['retweet_count'].append(tweet_dic['retweet_count'])    
+		tweets_dic['user_mentions'].append(tweet_dic['user_mentions'])
+		tweets_dic['urls'].append(tweet_dic['urls'])
+		tweets_dic['hashtags'].append(tweet_dic['hashtags'])
+		tweets_dic['place'].append(tweet_dic['place'])
+		tweets_dic['retweeted_from'].append(tweet_dic['retweeted_from'])
+		tweets_dic['text'].append(tweet_dic['text'])
+
 	return tweets_dic
 
 ##################################################################################

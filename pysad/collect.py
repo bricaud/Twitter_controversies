@@ -3,7 +3,7 @@ import pandas as pd
 
 
 from datetime import datetime, timedelta, date
-from twython import TwythonError
+from twython import TwythonError, TwythonRateLimitError, TwythonAuthError # to check the returned API errors
 #import preprocessor as tweetpre
 
 
@@ -74,13 +74,26 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 
 	# Test if ok
 	try:
-		lasttweet = tweet_handle.get_user_timeline(screen_name = username,  
-										   count = 1, include_rts = True, tweet_mode='extended')
+		user_tweets = tweet_handle.get_user_timeline(screen_name = username,  
+										   count = count, include_rts = True, tweet_mode='extended')
+	except TwythonAuthError as e_auth:
+		print('Cannot access to twitter API, authentification error. {}'.format(e_auth.error_code))
+		if e_auth.error_code == 401:
+			print('Unauthorized access to user {}. Skipping.'.format(username))
+			return tweets_dic
+		raise
+	except TwythonRateLimitError as e_lim:
+		print('API rate limit reached')
+		print(e_lim)
+		wait_time = int(e_lim.retry_after) - time.time()
+		print('Retry after {} seconds.'.format(wait_time))
+		print('Entring sleep mode at:',time.ctime())
+		print('Waking up at:',time.ctime(e_lim.retry_after+1))
+		time.sleep(wait_time + 1)
 	except TwythonError as e:
 		print('Twitter API returned error {} for user {}.'.format(e.error_code, username))
 		return tweets_dic
-	for raw_tweet in tweet_handle.get_user_timeline(screen_name = username,  
-										   count = count, include_rts = True, tweet_mode='extended'):
+	for raw_tweet in user_tweets:
 		# Check if the tweet date is not too old
 		time_struct = datetime.strptime(raw_tweet['created_at'],'%a %b %d %H:%M:%S +0000 %Y')
 		if (max_day_old is not None) and (time_struct < datetime.now() - timedelta(days = max_day_old)):
@@ -104,11 +117,11 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 # Functions for turning tweet data into an edge list with properties
 ##################################################################################
 
-def get_mentions_edges(tweet_df):
+def get_edges(tweet_df):
 	# Create the user -> mention table with their properties fom the list of tweets of a user
 	
 	# Some bots to be removed from the collection
-	usertoremove_list = ['threader_app','threadreaderapp']
+	userstoremove_list = ['threader_app','threadreaderapp']
 
 	row_list = []
 	for idx,tweet in tweet_df.iterrows():
@@ -123,7 +136,7 @@ def get_mentions_edges(tweet_df):
 		for m in mentions:
 			if m == user: # skip self-mentions
 				continue
-			if m in usertoremove_list:
+			if m in userstoremove_list:
 				continue
 			row_list.append({'user':user,'mention': m, 'weight': 1, 'hashtags': hashtags,
 							'date': tweet_date, 'urls':urls, 'text':text,
@@ -131,7 +144,25 @@ def get_mentions_edges(tweet_df):
 	mention_df = pd.DataFrame(row_list)
 	return mention_df
 
-def collect_user_mention(username,python_tweets,data_path, max_day_old):
+def get_nodes_properties(tweet_df):
+	row_list = []
+	tweet_df = tweet_df.sort_values(by='retweet_count',ascending=False)
+	for idx,tweet in tweet_df.head(5).iterrows():
+		user = tweet['user']
+		hashtags = tweet['hashtags']
+		tweet_date = tweet['date']
+		urls = tweet['urls']
+		text = tweet['text']
+		retweet_count = tweet['retweet_count']
+		favorite_count = tweet['favorite_count'] 
+		row_list.append({'user':user, 'hashtags': hashtags,
+							'date': tweet_date, 'urls':urls, 'text':text,
+							'retweet_count': retweet_count,'favorite_count': favorite_count})
+	popular_tweets_df = pd.DataFrame(row_list)
+	return popular_tweets_df
+
+
+def collect_user_data(username,python_tweets, max_day_old):
 	# Return the mentions of a users from its tweets, together with the hashtags of the tweet where the mention is
 	tweets_dic = get_user_tweets(python_tweets,username,count=100, max_day_old=max_day_old)
 	if not tweets_dic:
@@ -139,30 +170,10 @@ def collect_user_mention(username,python_tweets,data_path, max_day_old):
 		return pd.DataFrame()
 	#print(tweets_dic)
 	tweet_df = pd.DataFrame(tweets_dic)
-	mention_df = get_mentions_edges(tweet_df)
-	return mention_df
+	mention_df = get_edges(tweet_df)
+	popular_tweets = get_nodes_properties(tweet_df)
+	return mention_df, popular_tweets
 
-def create_user_edgelist_new(python_tweets, data_path, username, max_day_old):
-	# Process the user username and its mentioned users
-	# save in a file the edgelist for the user and each mentioned user
-	mention_df = collect_user_mention(username,python_tweets,data_path, max_day_old=max_day_old)
-	if mention_df.empty:
-		return mention_df
-	#mentionfilename = data_path + username + '_mentions' +'_t' +str(thres)+'.json'
-	mentionfilename = data_path + username + '_mentions' + '.json'
-	mention_df.to_json(mentionfilename)
-	return mention_df
-
-# def group_edges(edge_df):
-# 	# this agg only works with pandas version >= 0.25
-# 	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum),
-# 																 hashtags=('hashtags', sum),
-# 																 date=('date', sum),
-# 																 urls=('urls', sum),
-# 																 text=('text', sum))
-# 																 #,date=('date',lambda x: mean(x)))#lambda x: list(x)))
-# 	mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
-# 	return mention_grouped
 
 def group_edges(edge_df):
 	mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum))
@@ -170,32 +181,37 @@ def group_edges(edge_df):
 	return mention_grouped
 
 
-def process_user_list(python_tweets, data_path, username_list, thres=3, max_day_old=None):
+
+def process_hop(python_tweets, data_path, username_list, min_mentions=3, max_day_old=None):
 	""" collect the tweets and tweet info of the users in the list username_list
 	"""
+	#print('Collecting the tweets for the last {} days.'.format(max_day_old))
 	users_dic = {'username':[], 'Nb_diff_mentions': []}
-	print('Collecting the tweets for the last {} days.'.format(max_day_old))
 	new_users_list = []
 	empty_tweets_users = []
 	for user in tqdm(username_list):
-		mentions_df = create_user_edgelist_new(python_tweets, data_path, user, max_day_old=max_day_old)
+		edges_df, node_df = collect_user_data(user, python_tweets, max_day_old=max_day_old)
 		# Collect mentioned users for the next hop
-		# Only collect the ones mentioned more than the threshold thres 
-		if not mentions_df.empty:
-			mentions = group_edges(mentions_df)	
-			users_mentioned = mentions['mention'][mentions['weight']>=thres]
-			new_users_list += users_mentioned.tolist()
+		# Only collect the ones mentioned more than min_mentions
+		if not edges_df.empty:
+			# Save to json file
+			edgefilename = data_path + user + '_mentions' + '.json'
+			nodefilename = data_path + user + '_populartweets' + '.json'
+			edges_df.to_json(edgefilename)
+			node_df.to_json(nodefilename)
+			# Extract mentioned users
+			edges_g = group_edges(edges_df)	
+			users_connected = edges_g['mention'][edges_g['weight']>=min_mentions]
+			new_users_list += users_connected.tolist()
 		else:
 			empty_tweets_users.append(user)
 	print('users with empty tweet list or no mention:',empty_tweets_users)
 	return new_users_list 
 
-def process_hop(depth, python_tweets, data_path, username_list, min_mentions, max_day_old):
-	print('')
-	print('******* Processing users at {}-hop distance *******'.format(depth))
-	new_users_list = process_user_list(python_tweets, data_path, username_list, 
-													thres=min_mentions, max_day_old=max_day_old)
-	return new_users_list
+#def process_hop(depth, python_tweets, data_path, username_list, min_mentions, max_day_old):
+#	new_users_list = process_user_list(python_tweets, data_path, username_list, 
+#													thres=min_mentions, max_day_old=max_day_old)
+#	return new_users_list
 
 def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
 	""" Collect the tweets of the users and their mentions
@@ -209,7 +225,9 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 	total_username_list += username_list
 	new_username_list = username_list.copy()
 	for depth in range(exploration_depth):
-		new_users_founds = process_hop(depth, python_tweets, data_path, new_username_list, 
+		print('')
+		print('******* Processing users at {}-hop distance *******'.format(depth))
+		new_users_founds = process_hop(python_tweets, data_path, new_username_list, 
 			min_mentions, max_day_old)
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected

@@ -309,6 +309,9 @@ def save_excel(table_dic,filename, table_format='full'):
 			tablename = 'indicators'
 			col_size_dic = {'A:B':10, 'C:C': 15,'D:I':20}
 			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
+			tablename = 'users'
+			col_size_dic = {'A:B':10, 'C:C': 15,'D:I':20}
+			write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
 		#for tablename in table_dic:
 		#	write_excel_sheet(table_dic[tablename],tablename,writer,col_size_dic)
 			#table_dic[tablename].to_excel(writer, sheet_name=tablename, index=False)

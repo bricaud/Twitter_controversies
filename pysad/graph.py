@@ -3,6 +3,7 @@ import pandas as pd
 import networkx as nx
 import community
 import numpy as np
+import json
 
 #############################################################
 # Functions for the graph of users
@@ -34,14 +35,23 @@ def reshape_to_graph_edge_list(edge_grouped):
 		edge_list.append(edge_dic)
 	return pd.DataFrame(edge_list)
 
-def graph_from_edgeslist(edge_df,degree_min):
+def graph_from_edgeslist(edge_df):
 	print('Creating the graph from the edge list')
 	edge_grouped = edge_df.groupby(['user','mention'])
-	#edge_df_str = converttojson(edge_df)
 	edge_df_str = reshape_to_graph_edge_list(edge_grouped)
 	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', 
 		edge_attr=['weight','tweets'], create_using=nx.DiGraph)
 	print('Nb of nodes:',G.number_of_nodes())
+	return G
+
+def add_node_attributes(G,node_df):
+	node_dic = node_df.to_dict()
+	for column, nodevaluedic in node_dic.items():
+		nodevaluedic = {k: json.dumps(v) for k, v in nodevaluedic.items()}
+		nx.set_node_attributes(G,nodevaluedic,name=column)
+	return G
+
+def reduce_graph(G,degree_min):
 	# Drop node with small degree
 	remove = [node for node,degree in dict(G.degree()).items() if degree < degree_min]
 	G.remove_nodes_from(remove)

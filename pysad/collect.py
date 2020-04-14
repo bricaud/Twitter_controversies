@@ -37,6 +37,8 @@ def extract_tweet_infos(raw_tweet):
 	ts = time_struct.strftime('%Y-%m-%d %H:%M:%S')
 	
 	tweet_dic['user'] = raw_tweet['user']['screen_name']
+	tweet_dic['name'] = raw_tweet['user']['name']
+	tweet_dic['user_details'] = raw_tweet['user']['description']
 	tweet_dic['date'] = ts
 	tweet_dic['favorite_count'] = raw_tweet['favorite_count']
 	tweet_dic['retweet_count'] = raw_tweet['retweet_count']  
@@ -69,7 +71,8 @@ def extract_tweet_infos(raw_tweet):
 
 def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 	# Collect tweets from a username
-	tweets_dic = {'user': [], 'date': [], 'text': [], 'favorite_count': [], 'retweet_count': [],
+	tweets_dic = {'user': [], 'name': [], 'user_details':[], 'date': [], 
+		'text': [], 'favorite_count': [], 'retweet_count': [],
 		'user_mentions': [], 'urls': [], 'hashtags': [], 'place': [], 'retweeted_from': []}
 
 	# Test if ok
@@ -101,6 +104,8 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 		# Structure the needed info in a dict
 		tweet_dic = extract_tweet_infos(raw_tweet)
 		tweets_dic['user'].append(tweet_dic['user'])
+		tweets_dic['name'].append(tweet_dic['name'])
+		tweets_dic['user_details'].append(tweet_dic['user_details'])
 		tweets_dic['date'].append(tweet_dic['date'])
 		tweets_dic['favorite_count'].append(tweet_dic['favorite_count'])
 		tweets_dic['retweet_count'].append(tweet_dic['retweet_count'])    
@@ -113,9 +118,6 @@ def get_user_tweets(tweet_handle, username,count=100, max_day_old=None):
 
 	return tweets_dic
 
-##################################################################################
-# Functions for turning tweet data into an edge list with properties
-##################################################################################
 
 def get_edges(tweet_df):
 	# Create the user -> mention table with their properties fom the list of tweets of a user
@@ -145,34 +147,41 @@ def get_edges(tweet_df):
 	return mention_df
 
 def get_nodes_properties(tweet_df):
+	nb_popular_tweets = 5
 	row_list = []
+	# global properties
+	all_hashtags = []
+	for idx,tweet in tweet_df.iterrows(): 
+		all_hashtags += tweet['hashtags']
+	# Get most popular tweets of user
 	tweet_df = tweet_df.sort_values(by='retweet_count',ascending=False)
-	for idx,tweet in tweet_df.head(5).iterrows():
+	for idx,tweet in tweet_df.head(nb_popular_tweets).iterrows():
 		user = tweet['user']
+		name = tweet['name']
+		user_details = tweet['user_details']
 		hashtags = tweet['hashtags']
 		tweet_date = tweet['date']
 		urls = tweet['urls']
 		text = tweet['text']
 		retweet_count = tweet['retweet_count']
 		favorite_count = tweet['favorite_count'] 
-		row_list.append({'user':user, 'hashtags': hashtags,
-							'date': tweet_date, 'urls':urls, 'text':text,
+		row_list.append({'user':user, 'name': name,'user_details': user_details, 'all_hashtags': all_hashtags,
+							'date': tweet_date, 'urls':urls, 'text':text, 'hashtags': hashtags,
 							'retweet_count': retweet_count,'favorite_count': favorite_count})
 	popular_tweets_df = pd.DataFrame(row_list)
 	return popular_tweets_df
 
 
 def collect_user_data(username,python_tweets, max_day_old):
-	# Return the mentions of a users from its tweets, together with the hashtags of the tweet where the mention is
 	tweets_dic = get_user_tweets(python_tweets,username,count=100, max_day_old=max_day_old)
 	if not tweets_dic:
 		print('User {} has an empty tweet list.'.format(username))
 		return pd.DataFrame()
 	#print(tweets_dic)
 	tweet_df = pd.DataFrame(tweets_dic)
-	mention_df = get_edges(tweet_df)
-	popular_tweets = get_nodes_properties(tweet_df)
-	return mention_df, popular_tweets
+	edges_df = get_edges(tweet_df)
+	user_info_df = get_nodes_properties(tweet_df)
+	return edges_df, user_info_df
 
 
 def group_edges(edge_df):
@@ -196,14 +205,14 @@ def process_hop(python_tweets, data_path, username_list, min_mentions=3, max_day
 		if not edges_df.empty:
 			# Save to json file
 			edgefilename = data_path + user + '_mentions' + '.json'
-			nodefilename = data_path + user + '_populartweets' + '.json'
+			nodefilename = data_path + user + '_userinfo' + '.json'
 			edges_df.to_json(edgefilename)
 			node_df.to_json(nodefilename)
 			# Extract mentioned users
 			edges_g = group_edges(edges_df)	
 			users_connected = edges_g['mention'][edges_g['weight']>=min_mentions]
 			new_users_list += users_connected.tolist()
-		else:
+		else: # keep track of the users with empty account
 			empty_tweets_users.append(user)
 	print('users with empty tweet list or no mention:',empty_tweets_users)
 	return new_users_list 

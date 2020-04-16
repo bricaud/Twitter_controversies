@@ -146,7 +146,7 @@ def get_edges(tweet_df):
 	mention_df = pd.DataFrame(row_list)
 	return mention_df
 
-def get_nodes_properties(tweet_df):
+def get_nodes_properties(tweet_df,user):
 	nb_popular_tweets = 5
 	row_list = []
 	# global properties
@@ -165,22 +165,27 @@ def get_nodes_properties(tweet_df):
 		text = tweet['text']
 		retweet_count = tweet['retweet_count']
 		favorite_count = tweet['favorite_count'] 
-		row_list.append({'user':user, 'name': name,'user_details': user_details, 'all_hashtags': all_hashtags,
+		row_list.append({'user': user, 'name': name,'user_details': user_details, 'all_hashtags': all_hashtags,
 							'date': tweet_date, 'urls':urls, 'text':text, 'hashtags': hashtags,
 							'retweet_count': retweet_count,'favorite_count': favorite_count})
+	# If empty list of tweets
+	if not row_list:
+		row_list.append({'user': user, 'name': '','user_details': '', 'all_hashtags': [],
+							'date': '', 'urls': [], 'text': '', 'hashtags': [],
+							'retweet_count': 0,'favorite_count': 0})
 	popular_tweets_df = pd.DataFrame(row_list)
 	return popular_tweets_df
 
 
 def collect_user_data(username,python_tweets, max_day_old):
-	tweets_dic = get_user_tweets(python_tweets,username,count=100, max_day_old=max_day_old)
-	if not tweets_dic:
-		print('User {} has an empty tweet list.'.format(username))
-		return pd.DataFrame()
+	tweets_dic = get_user_tweets(python_tweets,username,count=200, max_day_old=max_day_old)
+	#if not tweets_dic:
+	#	print('User {} has an empty account.'.format(username))
+	#	return pd.DataFrame(), pd.DataFrame()
 	#print(tweets_dic)
 	tweet_df = pd.DataFrame(tweets_dic)
 	edges_df = get_edges(tweet_df)
-	user_info_df = get_nodes_properties(tweet_df)
+	user_info_df = get_nodes_properties(tweet_df,username)
 	return edges_df, user_info_df
 
 

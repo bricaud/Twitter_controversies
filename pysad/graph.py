@@ -4,10 +4,34 @@ import networkx as nx
 import community
 import numpy as np
 import json
+import glob
 
 #############################################################
 # Functions for the graph of users
 #############################################################
+
+def load_collected_data(data_path, graph_object='edge'):
+    data_df = pd.DataFrame()
+    if graph_object == 'node':
+        filestring = '_userinfo'
+    elif graph_object == 'edge':
+        filestring = '_mentions'
+    else:
+        print('Type unknown. graph_type only accept "node" or "edge".')
+        raise
+            
+    for filename in glob.glob(data_path + '*' + filestring + '*' + '.json'):
+        new_data_df = pd.read_json(filename)
+        #print('{} with {} tweets.'.format(filename,len(new_data_df)))
+        data_df = data_df.append(new_data_df)
+    data_df.reset_index(drop=True, inplace=True)
+    return data_df
+
+def reshape_node_data(node_df):
+	node_df = node_df[['user','name','user_details','all_hashtags']]
+	node_df.drop_duplicates(subset='user', inplace=True)
+	node_df.set_index('user', inplace=True)
+	return node_df
 
 def converttojson(edge_df):
 	""" Check if column type is list or dict and convert it to json
@@ -26,19 +50,21 @@ def converttojson(edge_df):
 #def aggregate_edges(edge_df):
 	#TODO
 
-def reshape_to_graph_edge_list(edge_grouped):
+def reshape_to_graph_edge_list(edge_grouped, min_weight):
 	edge_list = []
 	for name,group in edge_grouped:
 		json_df = group.to_json()
 		edge_dic = {'user': name[0], 'mention': name[1], 'weight':group['weight'].sum(),
 					'tweets': json_df}
+		if edge_dic['weight'] < min_weight:
+			continue
 		edge_list.append(edge_dic)
 	return pd.DataFrame(edge_list)
 
-def graph_from_edgeslist(edge_df):
+def graph_from_edgeslist(edge_df, min_weight):
 	print('Creating the graph from the edge list')
 	edge_grouped = edge_df.groupby(['user','mention'])
-	edge_df_str = reshape_to_graph_edge_list(edge_grouped)
+	edge_df_str = reshape_to_graph_edge_list(edge_grouped, min_weight)
 	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', 
 		edge_attr=['weight','tweets'], create_using=nx.DiGraph)
 	print('Nb of nodes:',G.number_of_nodes())

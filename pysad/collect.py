@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, date
 from twython import TwythonError, TwythonRateLimitError, TwythonAuthError # to check the returned API errors
 #import preprocessor as tweetpre
 
-
 from tqdm import tqdm
 
 
@@ -153,6 +152,7 @@ def get_nodes_properties(tweet_df,user):
 	all_hashtags = []
 	for idx,tweet in tweet_df.iterrows(): 
 		all_hashtags += tweet['hashtags']
+	all_hashtags = [(x,all_hashtags.count(x)) for x in set(all_hashtags)]
 	# Get most popular tweets of user
 	tweet_df = tweet_df.sort_values(by='retweet_count',ascending=False)
 	for idx,tweet in tweet_df.head(nb_popular_tweets).iterrows():
@@ -204,6 +204,8 @@ def process_hop(python_tweets, data_path, username_list, min_mentions=3, max_day
 	new_users_list = []
 	empty_tweets_users = []
 	for user in tqdm(username_list):
+		if not isinstance(user,str):
+			continue
 		edges_df, node_df = collect_user_data(user, python_tweets, max_day_old=max_day_old)
 		# Collect mentioned users for the next hop
 		# Only collect the ones mentioned more than min_mentions

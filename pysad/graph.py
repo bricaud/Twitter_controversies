@@ -73,8 +73,14 @@ def graph_from_edgeslist(edge_df, min_weight):
 def add_node_attributes(G,node_df):
 	node_dic = node_df.to_dict()
 	for column, nodevaluedic in node_dic.items():
-		nodevaluedic = {k: json.dumps(v) for k, v in nodevaluedic.items()}
-		nx.set_node_attributes(G,nodevaluedic,name=column)
+		nodeprop = {}
+		for key, value in nodevaluedic.items():
+			if isinstance(value,list):
+				nodeprop[key] = json.dumps(value)
+			else:
+				nodeprop[key] = value
+		#nodevaluedic = {k: json.dumps(v) for k, v in nodevaluedic.items()}
+		nx.set_node_attributes(G,nodeprop,name=column)
 	return G
 
 def reduce_graph(G,degree_min):

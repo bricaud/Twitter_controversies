@@ -83,10 +83,10 @@ def compute_cluster_indicators(subgraph):
 				'hierarchy':max_k*1/(max_k_core_size/gc_size), 'hierarchy2': max_k**2/gc_size}
 	return info_dic
 
-def indicator_table(cluster_dic):
+def indicator_table(clusters_dic):
 	comm_list = []
-	for c in cluster_dic:
-		gc = cluster_dic[c]
+	for c in clusters_dic:
+		gc = clusters_dic[c]
 		comm_dic = {'Community': c}
 		info_dic = compute_cluster_indicators(gc)
 		comm_dic = {**comm_dic,**info_dic}
@@ -146,10 +146,10 @@ def community_date_stats(dates_list):
 	return date_dic
 
 
-def dates_tags_table(cluster_dic):
+def dates_tags_table(clusters_dic):
 	comm_list = []
-	for c in cluster_dic:
-		gc = cluster_dic[c]
+	for c in clusters_dic:
+		gc = clusters_dic[c]
 		comm_dic = {'Community': c}
 		user_text, hashtags, date_list, urls = cluster_textandinfo(gc)
 		hash_dic = community_tags_dic(hashtags,nb_tags=5)
@@ -247,6 +247,24 @@ def cluster_tables(cluster_graph):
 	table_dic = extract_info_from_cluster_table(cluster_edge_info)
 	return {'users': cluster_users_df, **table_dic}
 
+def clutersprop2graph(G, cluster_info_dic, clusters):
+	G.graph['clusters'] = {}
+	for c_id in cluster_info_dic:
+		if not cluster_info_dic[c_id]:
+			continue
+		cluster_info = {}
+		info_table = cluster_info_dic[c_id]['info_table']
+		#info_table['keywords'] = keyword_dic[c_id]
+		cluster_info['hashtags'] = info_table['hashtags']['hashtag'].to_list()
+		cluster_info['keywords'] = info_table['keywords']['keyword'].to_list()
+		#cluster_info['keywords'] = keywords_dic[c_id]['keyword'].to_list()
+		cluster_info['urls'] = info_table['urls']['url'].to_list()
+		cluster_indicators = compute_cluster_indicators(clusters[c_id])
+		cluster_info['indicators'] = cluster_indicators
+
+		G.graph['clusters'][c_id] = cluster_info		
+	return G
+
 
 #############################################################
 ## Text processing from clusters info
@@ -258,11 +276,12 @@ def get_corpus(clusters_dic):
 	"""
 	corpus = []
 	for c_id in clusters_dic:
-		table_dic = clusters_dic[c_id]['info_table']
-		tweet_texts = table_dic['text']['filtered text']
 		document = ''
-		for text in tweet_texts: # concatenate tweets
-			document += text + ' '
+		if clusters_dic[c_id]:
+			table_dic = clusters_dic[c_id]['info_table']
+			tweet_texts = table_dic['text']['filtered text']
+			for text in tweet_texts: # concatenate tweets
+				document += text + ' '
 		corpus.append(document)
 	return corpus
 

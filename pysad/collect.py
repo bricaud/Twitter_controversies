@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 from twython import TwythonError, TwythonRateLimitError, TwythonAuthError # to check the returned API errors
 #import preprocessor as tweetpre
+import random
 
 from tqdm import tqdm
 
@@ -229,7 +230,8 @@ def process_hop(python_tweets, data_path, username_list, min_mentions=3, max_day
 #													thres=min_mentions, max_day_old=max_day_old)
 #	return new_users_list
 
-def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_day_old=7, exploration_depth=4):
+def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, 
+					max_day_old=7, exploration_depth=4, random_sset=False):
 	""" Collect the tweets of the users and their mentions
 		make an edge list user -> mention
 		and save each user edge list to a file
@@ -247,16 +249,26 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2, max_
 			min_mentions, max_day_old)
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
+		
+		
+		if random_sset == True and len(new_username_list)>500:
+			# Only explore a random subset of users
+			random_subset_size = 200
+			print('Taking a random subset of the user list, {} / {}'.format(random_subset_size,len(new_username_list)))
+			new_username_list = random.sample(new_username_list, random_subset_size)		
+		
 		total_username_list += new_username_list
-	
+
 	if len(total_username_list) < 100:
 		print('Total number of users collected:')
 		print(len(total_username_list),len(set(total_username_list)))	
 		print('Low number of users, processing one more hop.')
-		new_users_founds = process_hop(depth+1, python_tweets, data_path, new_username_list, 
+		new_users_founds = process_hop(python_tweets, data_path, new_username_list, 
 			min_mentions, max_day_old)
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
 		total_username_list += new_username_list
 	
+
+
 	return total_username_list

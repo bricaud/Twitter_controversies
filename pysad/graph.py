@@ -6,6 +6,7 @@ import numpy as np
 import json
 import glob
 
+from tqdm import tqdm
 #############################################################
 # Functions for the graph of users
 #############################################################
@@ -20,7 +21,7 @@ def load_collected_data(data_path, graph_object='edge'):
         print('Type unknown. graph_type only accept "node" or "edge".')
         raise
             
-    for filename in glob.glob(data_path + '*' + filestring + '*' + '.json'):
+    for filename in tqdm(glob.glob(data_path + '*' + filestring + '*' + '.json')):
         new_data_df = pd.read_json(filename)
         #print('{} with {} tweets.'.format(filename,len(new_data_df)))
         data_df = data_df.append(new_data_df)

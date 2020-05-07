@@ -254,7 +254,8 @@ def collect_tweets(username_list, data_path, python_tweets, min_mentions=2,
 		if random_sset == True and len(new_username_list)>500:
 			# Only explore a random subset of users
 			random_subset_size = 200
-			print('Taking a random subset of the user list, {} / {}'.format(random_subset_size,len(new_username_list)))
+			print('---')
+			print('Too many users mentioned ({}). Keeping a random subset of {}.'.format(len(new_username_list),random_subset_size))
 			new_username_list = random.sample(new_username_list, random_subset_size)		
 		
 		total_username_list += new_username_list

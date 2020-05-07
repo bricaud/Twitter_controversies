@@ -86,8 +86,8 @@ def convert_bitly_url(url_string):
 		try:
 			resp = session.head(url_string, allow_redirects=True)
 			return resp.url
-		except requests.exceptions.RequestException as e:  # This is the correct syntax
-			print(' exception raised for url',url)
+		except requests.exceptions.RequestException as e: 
+			print(' exception raised for url', url_string)
 			print(e)
 			return url_string
 	return url_string

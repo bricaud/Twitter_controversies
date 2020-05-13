@@ -11,6 +11,15 @@ from tqdm import tqdm
 # Functions for the graph of users
 #############################################################
 
+def load_data(data_path):
+	nodesfilename = data_path + 'nodes_data.json'
+	edgesfilename =  data_path + 'edges_data.json'
+	print('Loading',nodesfilename)
+	nodes_df = pd.read_json(nodesfilename)
+	print('Loading',edgesfilename)
+	edges_df = pd.read_json(edgesfilename)
+	return nodes_df,edges_df
+
 def load_collected_data(data_path, graph_object='edge'):
     data_df = pd.DataFrame()
     if graph_object == 'node':

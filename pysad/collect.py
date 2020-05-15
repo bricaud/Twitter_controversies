@@ -7,13 +7,11 @@ from tqdm import tqdm
 
 
 
-def process_hop(graph_handle, data_path, username_list):
+def process_hop(graph_handle, username_list):
 	""" collect the tweets and tweet info of the users in the list username_list
 	"""
-	#print('Collecting the tweets for the last {} days.'.format(max_day_old))
-	users_dic = {'username':[], 'Nb_diff_mentions': []}
 	new_users_list = []
-	empty_tweets_users = []
+	#empty_tweets_users = []
 	total_edges_df = pd.DataFrame()
 	total_nodes_df = pd.DataFrame()
 
@@ -34,29 +32,16 @@ def process_hop(graph_handle, data_path, username_list):
 	total_nodes_df.reset_index(drop=True, inplace=True)
 
 	return new_users_list, total_edges_df, total_nodes_df
-			# Save to json file
-			#edgefilename = data_path + user + '_mentions' + '.json'
-			#nodefilename = data_path + user + '_userinfo' + '.json'
-			#edges_df.to_json(edgefilename)
-			#node_df.to_json(nodefilename)
-			# Extract mentioned users
-			#edges_g = group_edges(edges_df)	
-			#users_connected = edges_g['mention'][edges_g['weight']>=min_mentions]
-			#new_users_list += users_connected.tolist()
-		#else: # keep track of the users with empty account
-		#	empty_tweets_users.append(user)
-	#print('users with empty tweet list or no mention:',empty_tweets_users)
-	#return new_users_list 
 
 
-def collect_tweets(username_list, data_path, graph_handle, exploration_depth=4, random_sset=False):
+
+def collect_tweets(username_list, graph_handle, exploration_depth=4, random_subset_size=None):
 	""" Collect the tweets of the users and their mentions
 		make an edge list user -> mention
 		and save each user edge list to a file
 	"""
 	print('Threshold set to {} mentions.'.format(graph_handle.rules['min_mentions']))
 	print('Collecting the tweets for the last {} days.'.format(graph_handle.rules['max_day_old']))
-	users_dic = {'username':[], 'Nb_mentions': [], 'mentions_of_mentions': []}
 	total_username_list = []
 	total_username_list += username_list
 	new_username_list = username_list.copy()
@@ -65,14 +50,12 @@ def collect_tweets(username_list, data_path, graph_handle, exploration_depth=4, 
 	for depth in range(exploration_depth):
 		print('')
 		print('******* Processing users at {}-hop distance *******'.format(depth))
-		new_users_founds, edges_df, nodes_df = process_hop(graph_handle, data_path, new_username_list)
+		new_users_founds, edges_df, nodes_df = process_hop(graph_handle, new_username_list)
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
 		
-		
-		if random_sset == True and len(new_username_list)>500:
+		if isinstance(random_subset_size,int) and (len(new_username_list)>random_subset_size):
 			# Only explore a random subset of users
-			random_subset_size = 200
 			print('---')
 			print('Too many users mentioned ({}). Keeping a random subset of {}.'.format(len(new_username_list),random_subset_size))
 			new_username_list = random.sample(new_username_list, random_subset_size)		
@@ -80,11 +63,13 @@ def collect_tweets(username_list, data_path, graph_handle, exploration_depth=4, 
 		total_username_list += new_username_list
 		total_edges_df = total_edges_df.append(edges_df)
 		total_nodes_df = total_nodes_df.append(nodes_df)
+	
+	# optional
 	if len(total_username_list) < 100:
 		print('Total number of users collected:')
 		print(len(total_username_list),len(set(total_username_list)))	
 		print('Low number of users, processing one more hop.')
-		new_users_founds, edges_df, nodes_df = process_hop(graph_handle, data_path, new_username_list)
+		new_users_founds, edges_df, nodes_df = process_hop(graph_handle, new_username_list)
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
 		total_username_list += new_username_list

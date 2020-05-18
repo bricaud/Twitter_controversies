@@ -242,6 +242,32 @@ class twitter_network:
 		mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
 		return mention_grouped
 
+#####################################################
+## Utils functions for the graph
+#####################################################
+
+def reshape_node_data(node_df):
+	node_df = node_df[['user','name','user_details','all_hashtags','spikyball_hop']]
+	node_df = node_df.drop_duplicates(subset='user')
+	node_df.set_index('user', inplace=True)
+	return node_df
+
+def reshape_edge_data(edge_df, min_weight):
+	edge_grouped = edge_df.groupby(['user','mention'])
+	edge_list = []
+	# grouping together the user->mention and summing their weights
+	for name,group in edge_grouped:
+		tweets = group.to_json()
+		#tweets = group
+		edge_dic = {'user': name[0], 'mention': name[1], 'weight': group['weight'].sum(),
+					'tweets': tweets}
+		if edge_dic['weight'] < min_weight:
+			continue
+		edge_list.append(edge_dic)
+	edge_df =  pd.DataFrame(edge_list)
+	edge_df.set_index(['user','mention'], inplace=True)
+	return edge_df
+
 #############################################################
 ## Functions for managing twitter accounts to follow
 #############################################################

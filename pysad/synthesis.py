@@ -18,7 +18,7 @@ class graph:
 		if node_id not in G:
 			return pd.DataFrame(),pd.DataFrame()
 		# node data
-		node_df = pd.DataFrame(G.nodes[node_id])
+		node_df = pd.DataFrame([{'source':node_id, **G.nodes[node_id]}])
 		# Edges and edge data		
 		if nx.is_directed(G):
 			#inedges = G.in_edges(node_id, data=True)
@@ -48,3 +48,13 @@ class graph:
 	def neighbors_list(self,edges_df):
 		neighbors = edges_df['target'].unique().tolist()
 		return neighbors
+
+
+
+def reshape_node_data(nodes_df):
+	nodes_df.set_index('source', inplace=True)
+	return nodes_df
+
+def reshape_edge_data(edge_df):
+	edge_df.set_index(['source','target'], inplace=True)
+	return edge_df

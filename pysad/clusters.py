@@ -200,6 +200,8 @@ def extract_info_from_cluster_table(cluster_edge_table):
 	url_list = []
 	for index,row in cluster_edge_table.iterrows():
 		username = row['user']
+		#if not 'tweets' in row:
+		#	continue # pass to the next user
 		tweet_df = pd.read_json(row['tweets'])
 		
 		for idx,tweet in tweet_df.iterrows():
@@ -224,6 +226,9 @@ def extract_info_from_cluster_table(cluster_edge_table):
 				'bcentrality': row['bcentrality']})
 			htag_list += htags
 			url_list += urls
+	if not text_list:
+		empty_df = pd.DataFrame()
+		return {'text': empty_df, 'hashtags': empty_df, 'words': empty_df, 'urls': empty_df}
 	text_df = pd.DataFrame(text_list)
 	mostcommon_words_df = most_common_words(text_df['filtered text'])
 	hashtags_df = count_order_items(htag_list,'hashtag')
@@ -279,9 +284,12 @@ def get_corpus(clusters_dic):
 		document = ''
 		if clusters_dic[c_id]:
 			table_dic = clusters_dic[c_id]['info_table']
-			tweet_texts = table_dic['text']['filtered text']
-			for text in tweet_texts: # concatenate tweets
-				document += text + ' '
+			if 'filtered text' not in table_dic['text']:
+				document = ''
+			else:
+				tweet_texts = table_dic['text']['filtered text']
+				for text in tweet_texts: # concatenate tweets
+					document += text + ' '
 		corpus.append(document)
 	return corpus
 

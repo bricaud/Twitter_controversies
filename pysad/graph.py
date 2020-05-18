@@ -5,43 +5,31 @@ import community
 import numpy as np
 import json
 import glob
+import pysad.collect
 
 from tqdm import tqdm
 #############################################################
 # Functions for the graph of users
 #############################################################
 
-def load_data(data_path):
-	nodesfilename = data_path + 'nodes_data.json'
-	edgesfilename =  data_path + 'edges_data.json'
-	print('Loading',nodesfilename)
-	nodes_df = pd.read_json(nodesfilename)
-	print('Loading',edgesfilename)
-	edges_df = pd.read_json(edgesfilename)
-	return nodes_df,edges_df
+# def load_collected_data(data_path, graph_object='edge'):
+#     data_df = pd.DataFrame()
+#     if graph_object == 'node':
+#         filestring = '_userinfo'
+#     elif graph_object == 'edge':
+#         filestring = '_mentions'
+#     else:
+#         print('Type unknown. graph_type only accept "node" or "edge".')
+#         raise
+			
+#     for filename in tqdm(glob.glob(data_path + '*' + filestring + '*' + '.json')):
+#         new_data_df = pd.read_json(filename)
+#         #print('{} with {} tweets.'.format(filename,len(new_data_df)))
+#         data_df = data_df.append(new_data_df)
+#     data_df.reset_index(drop=True, inplace=True)
+#     return data_df
 
-def load_collected_data(data_path, graph_object='edge'):
-    data_df = pd.DataFrame()
-    if graph_object == 'node':
-        filestring = '_userinfo'
-    elif graph_object == 'edge':
-        filestring = '_mentions'
-    else:
-        print('Type unknown. graph_type only accept "node" or "edge".')
-        raise
-            
-    for filename in tqdm(glob.glob(data_path + '*' + filestring + '*' + '.json')):
-        new_data_df = pd.read_json(filename)
-        #print('{} with {} tweets.'.format(filename,len(new_data_df)))
-        data_df = data_df.append(new_data_df)
-    data_df.reset_index(drop=True, inplace=True)
-    return data_df
 
-def reshape_node_data(node_df):
-	node_df = node_df[['user','name','user_details','all_hashtags']]
-	node_df.drop_duplicates(subset='user', inplace=True)
-	node_df.set_index('user', inplace=True)
-	return node_df
 
 def converttojson(edge_df):
 	""" Check if column type is list or dict and convert it to json
@@ -60,38 +48,53 @@ def converttojson(edge_df):
 #def aggregate_edges(edge_df):
 	#TODO
 
-def reshape_to_graph_edge_list(edge_grouped, min_weight):
-	edge_list = []
-	for name,group in edge_grouped:
-		json_df = group.to_json()
-		edge_dic = {'user': name[0], 'mention': name[1], 'weight':group['weight'].sum(),
-					'tweets': json_df}
-		if edge_dic['weight'] < min_weight:
-			continue
-		edge_list.append(edge_dic)
-	return pd.DataFrame(edge_list)
+
 
 def graph_from_edgeslist(edge_df, min_weight):
 	print('Creating the graph from the edge list')
-	edge_grouped = edge_df.groupby(['user','mention'])
-	edge_df_str = reshape_to_graph_edge_list(edge_grouped, min_weight)
-	G = nx.from_pandas_edgelist(edge_df_str,source='user',target='mention', 
-		edge_attr=['weight','tweets'], create_using=nx.DiGraph)
+	# The indices in the dataframe are source and target for the edges
+	edge_df = edge_df.rename_axis(['source','target']).reset_index()
+	G = nx.from_pandas_edgelist(edge_df,source='source',target='target', create_using=nx.DiGraph)
 	print('Nb of nodes:',G.number_of_nodes())
 	return G
 
+# def shape_attributes(G,data_dic):
+# 	prop_list = []
+# 	for propname, propdic in data_dic.items():
+# 		prop = {}
+# 		for key, value in propdic.items():
+# 			if isinstance(value,list):
+# 				prop[key] = json.dumps(value)
+# 			else:
+# 				prop[key] = value
+# 		#nodevaluedic = {k: json.dumps(v) for k, v in nodevaluedic.items()}
+# 		prop.append()
+# 		nx.set_node_attributes(G,nodeprop,name=propname)
+# 	return prop_list
+
+def attributes_tojson(data_dic):
+	for propname, propdic in data_dic.items():
+		for key, value in propdic.items():
+			if isinstance(value,list):
+				data_dic[propname][key] = json.dumps(value)
+			else:
+				data_dic[propname][key] = value
+	return data_dic
+
 def add_node_attributes(G,node_df):
 	node_dic = node_df.to_dict()
-	for column, nodevaluedic in node_dic.items():
-		nodeprop = {}
-		for key, value in nodevaluedic.items():
-			if isinstance(value,list):
-				nodeprop[key] = json.dumps(value)
-			else:
-				nodeprop[key] = value
-		#nodevaluedic = {k: json.dumps(v) for k, v in nodevaluedic.items()}
-		nx.set_node_attributes(G,nodeprop,name=column)
+	node_dic = attributes_tojson(node_dic)
+	for propname,propdic in node_dic.items():
+		nx.set_node_attributes(G,propdic,name=propname)
 	return G
+
+def add_edges_attributes(G,edges_df):
+	edge_dic = edges_df.to_dict()
+	#edge_dic = attributes_tojson(edge_dic)
+	for propname,propdic in edge_dic.items():
+		nx.set_edge_attributes(G,propdic,name=propname)
+	return G
+
 
 def reduce_graph(G,degree_min):
 	# Drop node with small degree
@@ -103,6 +106,32 @@ def reduce_graph(G,degree_min):
 	print('removed {} isolated nodes.'.format(len(isolates)))
 	if G.is_directed():
 		print('Warning: the graph is directed.')
+	return G
+
+def handle_spikyball_neighbors(G,graph_handle,remove=True):
+	# Complete the info of the nodes not collected
+	sp_neighbors = [node for node,data in G.nodes(data=True) if 'spikyball_hop' not in data]
+	print('Number of neighbors of the spiky ball:',len(sp_neighbors))
+
+	# 2 options: 1) remove the neighbors or 2) rerun the collection to collect the missing node info
+	if remove == True:
+		# Option 1:
+		print('Removing spiky ball neighbors...')
+		G.remove_nodes_from(sp_neighbors)
+		print('Number of nodes after removal:',G.number_of_nodes())
+	else:
+		# Option 2: collect the missing node data
+		print('Collecting info for neighbors...')
+		new_nodes_founds, edges_df, nodes_df = pysad.collect.process_hop(graph_handle, sp_neighbors)
+		G = add_node_attributes(G,nodes_df)
+		sp_nodes_dic = {node:-1 for node in sp_neighbors}
+		nx.set_node_attributes(G,sp_nodes_dic,name='spikyball_hop')
+		print('Node info added to the graph.')
+	# Check integrity
+	i=0
+	for node,data in G.nodes(data=True):
+		if 'spikyball_hop' not in data:
+			print('Missing information for node',node)
 	return G
 
 def detect_communities(G):
@@ -125,9 +154,10 @@ def detect_communities(G):
 	return G, community_dic #,clusters_modularity
 
 def remove_small_communities(G,community_dic,min_size):
-	for key in community_dic:
-		graph = community_dic[key]
-		nb_removed = 0
+	community_tmp = {k:v.copy() for k,v in community_dic.items()}
+	nb_removed = 0
+	for key in community_tmp:
+		graph = community_tmp[key]
 		if graph.number_of_nodes() <= min_size:
 			G.remove_nodes_from(graph.nodes())
 			nb_removed +=1

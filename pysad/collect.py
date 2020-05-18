@@ -39,9 +39,11 @@ def spiky_ball(username_list, graph_handle, exploration_depth=4, random_subset_s
 		and save each user edge list to a file
 	"""
 	if graph_handle.rules:
-		print('Parameters')
-		for key,value in graph_handle.rules:
+		print('---')
+		print('Parameters:')
+		for key,value in graph_handle.rules.items():
 			print(key,value)
+		print('---')
 	total_username_list = []
 	total_username_list += username_list
 	new_username_list = username_list.copy()
@@ -51,6 +53,7 @@ def spiky_ball(username_list, graph_handle, exploration_depth=4, random_subset_s
 		print('')
 		print('******* Processing users at {}-hop distance *******'.format(depth))
 		new_users_founds, edges_df, nodes_df = process_hop(graph_handle, new_username_list)
+		nodes_df['spikyball_hop'] = depth
 		#New users to collect:
 		new_username_list = list(set(new_users_founds).difference(set(total_username_list))) # remove the one already collected
 		
@@ -80,6 +83,7 @@ def spiky_ball(username_list, graph_handle, exploration_depth=4, random_subset_s
 	total_nodes_df.reset_index(drop=True, inplace=True)
 	return total_username_list, total_nodes_df, total_edges_df
 
+
 def save_data(nodes_df,edges_df,data_path):
 	# Save to json file
 	edgefilename = data_path + 'edges_data' + '.json'
@@ -89,3 +93,12 @@ def save_data(nodes_df,edges_df,data_path):
 	print('Writing',nodefilename)
 	nodes_df.to_json(nodefilename)
 	return None
+
+def load_data(data_path):
+	nodesfilename = data_path + 'nodes_data.json'
+	edgesfilename =  data_path + 'edges_data.json'
+	print('Loading',nodesfilename)
+	nodes_df = pd.read_json(nodesfilename)
+	print('Loading',edgesfilename)
+	edges_df = pd.read_json(edgesfilename)
+	return nodes_df,edges_df

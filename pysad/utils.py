@@ -1,56 +1,8 @@
 
-import json
 import os
 import requests
 
-#############################################################
-## Functions for managing twitter accounts to follow
-#############################################################
 
-class initial_accounts:
-	""" Handle the initial twitter accounts (load ans save them)
-	"""
-	accounts_file = 'initial_accounts.txt' # Default account file
-	accounts_dic = {}
-	
-	def __init__(self,accounts_file=None):
-		if accounts_file is not None:
-			self.accounts_file = accounts_file
-		self.load()
-
-	def accounts(self,label=None):
-		#if not self.accounts_dic:
-		#	self.load()
-		if label is None:
-			return self.accounts_dic
-		self.check_label(label)
-		return self.accounts_dic[label]
-
-	def list(self):
-		return list(self.accounts_dic.keys())
-
-	def add(self,label,list_of_accounts):
-		self.accounts_dic[label] = list_of_accounts
-
-	def remove(self,label):
-		self.check_label(label)
-		del self.accounts_dic[name]
-
-	def save(self):
-		with open(self.accounts_file, 'w') as outfile:
-			json.dump(self.accounts_dic, outfile)
-		print('Wrote',self.accounts_file)
-
-	def load(self):
-		with open(self.accounts_file) as json_file:
-			self.accounts_dic = json.load(json_file)
-
-	def check_label(self,label):
-		if label not in self.accounts_dic:
-			print('ERROR. Key "{}" is not in the list of accounts.'.format(label))
-			print('Possible choices are: {}'.format([key for key in self.accounts_dic.keys()]))
-			raise keyError
-	
 ####################################################################
 # Other utils
 ####################################################################

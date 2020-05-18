@@ -16,8 +16,6 @@ from tqdm import tqdm
 
 class twitter_network:
 
-	rules = {}
-
 
 	def __init__(self,credential_file):
 
@@ -28,6 +26,7 @@ class twitter_network:
 
 		# Instantiate an object
 		self.twitter_handle = Twython(creds['CONSUMER_KEY'], creds['CONSUMER_SECRET'])
+		self.rules = {}
 		self.rules['min_mentions'] = 0
 		self.rules['max_day_old'] = None
 		self.rules['max_tweets_per_user'] = 200
@@ -242,3 +241,51 @@ class twitter_network:
 		mention_grouped = edge_df.groupby(['user','mention']).agg(weight=('weight',sum))
 		mention_grouped.reset_index(level=['user', 'mention'], inplace=True)
 		return mention_grouped
+
+#############################################################
+## Functions for managing twitter accounts to follow
+#############################################################
+
+class initial_accounts:
+	""" Handle the initial twitter accounts (load ans save them)
+	"""
+	
+	def __init__(self,accounts_file=None):
+		if accounts_file is None:
+			accounts_file = 'initial_accounts.txt' # Default account file
+		self.accounts_file = accounts_file
+		self.accounts_dic = {}
+		self.load()
+
+	def accounts(self,label=None):
+		#if not self.accounts_dic:
+		#	self.load()
+		if label is None:
+			return self.accounts_dic
+		self.check_label(label)
+		return self.accounts_dic[label]
+
+	def list(self):
+		return list(self.accounts_dic.keys())
+
+	def add(self,label,list_of_accounts):
+		self.accounts_dic[label] = list_of_accounts
+
+	def remove(self,label):
+		self.check_label(label)
+		del self.accounts_dic[name]
+
+	def save(self):
+		with open(self.accounts_file, 'w') as outfile:
+			json.dump(self.accounts_dic, outfile)
+		print('Wrote',self.accounts_file)
+
+	def load(self):
+		with open(self.accounts_file) as json_file:
+			self.accounts_dic = json.load(json_file)
+
+	def check_label(self,label):
+		if label not in self.accounts_dic:
+			print('ERROR. Key "{}" is not in the list of accounts.'.format(label))
+			print('Possible choices are: {}'.format([key for key in self.accounts_dic.keys()]))
+			raise keyError

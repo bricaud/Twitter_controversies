@@ -36,12 +36,18 @@ class twitter_network:
 			return pd.DataFrame(),pd.DataFrame()
 		tweets_dic = self.get_user_tweets(user)
 		edges_df, node_df = self.edges_nodes_from_user(tweets_dic,user)
-		return edges_df,node_df
+		return node_df, edges_df
 
-	def filter_nodes(self,nodes_df):
-		return nodes_df
+	def filter(self,node_df,edges_df):
+		# filter edges according to node properties
+		# filter according to edges properties
+		edges_df = self.filter_edges(edges_df)
+		return node_df,edges_df
 
 	def filter_edges(self,edges_df):
+		# filter edges according to their properties
+		if edges_df.empty:
+			return edges_df
 		edges_g = self.group_edges(edges_df)	
 		users_to_remove = edges_g['mention'][edges_g['weight'] < self.rules['min_mentions']]
 		# Get names of indexes for which column Age has value 30
@@ -56,8 +62,12 @@ class twitter_network:
 		users_connected = edges_df['mention'].unique().tolist()
 		return users_connected
 
-
-
+	def neighbors_with_weights(self, edges_df):
+		user_list = self.neighbors_list(edges_df)
+		user_dic = {}
+		for user in user_list:
+			user_dic[user] = 1
+		return user_dic
 	###############################################################
 	# Functions for extracting tweet info from the twitter API
 	###############################################################

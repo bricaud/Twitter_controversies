@@ -5,15 +5,16 @@ import pandas as pd
 class graph:
 
 
-	rules = {}
-
-
 	def __init__(self,graph):
 		# Instantiate an object
 		self.G = graph
+		self.rules = {}
+		self.rules['min_degree'] = 1
 
 
 	def get_neighbors(self,node_id):
+		# collect info on the node and its (out going) edges
+		# return 2 dataframes, one with edges info and the other with the node info
 		G = self.G
 		if node_id not in G:
 			return pd.DataFrame(),pd.DataFrame()
@@ -31,10 +32,16 @@ class graph:
 			edge_dic = {'source': source, 'target': target, **data}
 			edgeprop_dic_list.append(edge_dic)
 		edges_df = pd.DataFrame(edgeprop_dic_list)
-		return edges_df,node_df
+		return node_df, edges_df
 
-	def filter_nodes(self,nodes_df):
-		return nodes_df
+	def filter(self,node_df,edges_df):
+		if len(edges_df) < self.rules['min_degree']:
+			# discard the node
+			node_df = pd.DataFrame()
+			edges_df = pd.DataFrame()
+		# filter the edges
+		edges_df = self.filter_edges(edges_df)
+		return node_df,edges_df
 
 	def filter_edges(self,edges_df):
 		#edges_g = self.group_edges(edges_df)	
@@ -49,6 +56,13 @@ class graph:
 		neighbors = edges_df['target'].unique().tolist()
 		return neighbors
 
+
+	def neighbors_with_weights(self, edges_df):
+		node_list = self.neighbors_list(edges_df)
+		node_dic = {}
+		for node in node_list:
+			node_dic[node] = len(edges_df) # degree of the node
+		return node_dic
 
 
 def reshape_node_data(nodes_df):
